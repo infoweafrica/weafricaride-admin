@@ -1,0 +1,633 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
+import { Vehicle } from "@/lib/types";
+import {
+  Search, Plus, Eye, Edit2, MoreHorizontal, CheckCircle, XCircle, X, Shield, AlertTriangle,
+  Car, Bike, Truck, UserPlus, UserMinus, Clock, FileText, Wrench,
+  DollarSign, Ban, Trash2, Upload, Calendar, ArrowUpRight, MapPin, History,
+} from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/utils";
+
+const VEHICLE_TYPE_LABELS: Record<string, string> = {
+  economy: "WeAfrica X", comfort: "WeAfrica Comfort", xl: "WeAfrica XL",
+  boda: "WeAfrica Boda", luxury: "WeAfrica Black", delivery: "WeAfrica Delivery",
+};
+const VEHICLE_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  economy: Car, comfort: Car, xl: Truck, boda: Bike, luxury: Car, delivery: Truck,
+};
+
+interface PricingInfo {
+  base_fare: number; per_km: number; per_min: number;
+  booking_fee: number; waiting_fee: number; cancellation_fee: number;
+  surge_multiplier: number; commission_percent: number; currency: string;
+}
+interface DocRecord {
+  type: string; label: string; url?: string; uploaded_at?: string;
+  expiry_date?: string; status: "verified" | "pending" | "expired" | "rejected"; reviewed_by?: string;
+}
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isExpiredDate(expiry?: string) {
+  return !expiry || new Date(expiry).getTime() < new Date().getTime();
+}
+
+function isExpiringSoonDate(expiry?: string) {
+  if (!expiry || isExpiredDate(expiry)) return false;
+  return new Date(expiry).getTime() < new Date().getTime() + THIRTY_DAYS_MS;
+}
+
+function getVehicleReadiness(v: Vehicle) {
+  const missing: string[] = [];
+
+  if (!v.plate_number) missing.push("plate number");
+  if (!v.make) missing.push("make");
+  if (!v.model) missing.push("model");
+  if (!v.vehicle_registration_url) missing.push("registration");
+  if (!v.vehicle_insurance_url) missing.push("insurance");
+  if (!v.vehicle_photo_urls?.length) missing.push("vehicle photos");
+  if (!v.insurance_expiry) missing.push("insurance expiry");
+
+  if (v.insurance_expiry && isExpiredDate(v.insurance_expiry)) {
+    missing.push("valid insurance");
+  }
+
+  if (v.inspection_status !== "passed") {
+    missing.push("passed inspection");
+  }
+
+  if (missing.length === 0) {
+    return {
+      label: "Ready",
+      message: "Vehicle is ready for trips",
+      className: "bg-green-100 text-green-700",
+      canActivate: true,
+    };
+  }
+
+  if (missing.length <= 2) {
+    return {
+      label: "Needs Review",
+      message: `Missing: ${missing.join(", ")}`,
+      className: "bg-amber-100 text-amber-700",
+      canActivate: false,
+    };
+  }
+
+  return {
+    label: "Not Ready",
+    message: `Missing: ${missing.join(", ")}`,
+    className: "bg-red-100 text-red-700",
+    canActivate: false,
+  };
+}
+
+export default function VehiclesPage() {
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [docFilter, setDocFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"overview" | "documents" | "inspection" | "pricing" | "maintenance" | "history">("overview");
+  const [pricingCache, setPricingCache] = useState<Record<string, PricingInfo | null>>({});
+  const [docAction, setDocAction] = useState<{ doc: DocRecord; action: "approve" | "reject" | "reupload" } | null>(null);
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignDriverId, setAssignDriverId] = useState("");
+  const [newVehicle, setNewVehicle] = useState({ plate_number: "", make: "", model: "", year: new Date().getFullYear(), color: "White", vehicle_type: "economy", seats: 4, driver_id: "" });
+  const [availableDrivers, setAvailableDrivers] = useState<{ id: string; full_name: string }[]>([]);
+
+  useEffect(() => {
+    supabase.from("drivers").select("id, user:users(full_name)").eq("is_approved", true).then(({ data }) => {
+      if (data) setAvailableDrivers((data as any[]).map((d: any) => ({ id: d.id, full_name: d.user?.full_name || "Unknown" })));
+    });
+  }, []);
+
+  const fetchVehicles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: vData } = await supabase.from("vehicles").select("*").order("created_at", { ascending: false });
+      const vList = ((vData || []) as unknown as Vehicle[]);
+
+      // Build set of known driver_ids from vehicles.driver_id
+      const directDriverIds = new Set(vList.map(v => v.driver_id).filter(Boolean));
+
+      // Also fetch drivers who reference these vehicles via drivers.vehicle_id (reverse link)
+      const vehicleIds = vList.map(v => v.id);
+      if (vehicleIds.length > 0) {
+        const { data: driversWithVehicle } = await supabase
+          .from("drivers")
+          .select("id, vehicle_id, user:users(full_name, phone)")
+          .in("vehicle_id", vehicleIds);
+
+        const driverMap: Record<string, any> = {};
+        (driversWithVehicle as any[])?.forEach((d: any) => {
+          driverMap[d.id] = d.user || {};
+          // Backfill vehicles.driver_id from drivers.vehicle_id if missing
+          const v = vList.find(ve => ve.id === d.vehicle_id);
+          if (v && !v.driver_id) {
+            v.driver_id = d.id;
+          }
+        });
+
+        // Also fetch any drivers referenced by vehicles.driver_id not already fetched
+        const allDriverIds = [...new Set([...directDriverIds, ...(driversWithVehicle as any[] || []).map((d: any) => d.id)])];
+        const missingIds = allDriverIds.filter(id => !driverMap[id]);
+
+        if (missingIds.length > 0) {
+          const { data: extraDrivers } = await supabase
+            .from("drivers")
+            .select("id, user:users(full_name, phone)")
+            .in("id", missingIds);
+          (extraDrivers as any[])?.forEach((d: any) => { driverMap[d.id] = d.user || {}; });
+        }
+
+        // Assign driver info to vehicles
+        vList.forEach(v => { if (v.driver_id && driverMap[v.driver_id]) v.driver = driverMap[v.driver_id] as any; });
+      }
+
+      setVehicles(vList);
+    } catch { setVehicles([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
+
+  useEffect(() => {
+    let filtered = [...vehicles];
+    if (search) { const s = search.toLowerCase(); filtered = filtered.filter(v => v.plate_number?.toLowerCase().includes(s) || v.make?.toLowerCase().includes(s) || v.model?.toLowerCase().includes(s) || ((v.driver as any)?.user?.full_name?.toLowerCase().includes(s))); }
+    if (typeFilter !== "all") filtered = filtered.filter(v => v.vehicle_type === typeFilter);
+    if (statusFilter === "active") filtered = filtered.filter(v => v.is_active);
+    if (statusFilter === "inactive") filtered = filtered.filter(v => !v.is_active);
+    if (docFilter === "expiring") filtered = filtered.filter(v => isExpiringSoonDate(v.insurance_expiry));
+    if (docFilter === "verified") filtered = filtered.filter(v => v.inspection_status === "passed");
+    setFilteredVehicles(filtered);
+  }, [search, typeFilter, statusFilter, docFilter, vehicles]);
+
+  const loadPricing = async (vehicle: Vehicle) => {
+    const key = vehicle.id;
+    if (pricingCache[key] !== undefined) return pricingCache[key];
+    try {
+      const { data } = await supabase.from("pricing_config").select("*").eq("vehicle_type", vehicle.vehicle_type || "").eq("is_active", true).limit(1);
+      const firstRow = (data as any[])?.[0] || null;
+      const info: PricingInfo | null = firstRow ? { base_fare: firstRow.base_fare, per_km: firstRow.per_km, per_min: firstRow.per_min, booking_fee: firstRow.booking_fee ?? 0, waiting_fee: firstRow.waiting_fee ?? 0, cancellation_fee: firstRow.cancellation_fee ?? 0, surge_multiplier: firstRow.surge_multiplier ?? 1, commission_percent: firstRow.commission_percent ?? 0, currency: firstRow.currency ?? "MWK" } : null;
+      setPricingCache(prev => ({ ...prev, [key]: info })); return info;
+    } catch { setPricingCache(prev => ({ ...prev, [key]: null })); return null; }
+  };
+
+  const handleAddVehicle = async () => { try { await supabase.from("vehicles").insert(newVehicle); fetchVehicles(); setShowAddModal(false); } catch {} };
+  const handleAssignDriver = async () => { if (!selectedVehicle || !assignDriverId) return; try { await supabase.from("vehicles").update({ driver_id: assignDriverId }).eq("id", selectedVehicle.id); fetchVehicles(); setShowAssignModal(false); setAssignDriverId(""); } catch {} };
+  const handleUnassignDriver = async (vehicleId: string) => { try { await supabase.from("vehicles").update({ driver_id: null }).eq("id", vehicleId); fetchVehicles(); } catch {} };
+  const handleSuspend = async (id: string) => { try { await supabase.from("vehicles").update({ is_active: false }).eq("id", id); fetchVehicles(); setShowDrawer(false); } catch {} };
+  const handleReactivate = async (id: string) => {
+    const vehicle = vehicles.find(v => v.id === id);
+    if (vehicle) {
+      const readiness = getVehicleReadiness(vehicle);
+      if (!readiness.canActivate) {
+        alert(`Cannot activate vehicle yet. ${readiness.message}`);
+        return;
+      }
+    }
+
+    try {
+      await supabase.from("vehicles").update({ is_active: true }).eq("id", id);
+      fetchVehicles();
+    } catch {}
+  };
+  const handleDelete = async (id: string) => { if (!confirm("Permanently delete this vehicle?")) return; try { await supabase.from("vehicles").delete().eq("id", id); fetchVehicles(); setShowDrawer(false); } catch {} };
+
+  const handleSuspendUnsafeVehicles = async () => {
+    const unsafeIds = vehicles
+      .filter(v => v.is_active && !getVehicleReadiness(v).canActivate)
+      .map(v => v.id);
+
+    if (unsafeIds.length === 0) {
+      alert("No unsafe active vehicles found.");
+      return;
+    }
+
+    if (!confirm(`Suspend ${unsafeIds.length} unsafe active vehicle(s)?`)) return;
+
+    try {
+      await supabase.from("vehicles").update({ is_active: false }).in("id", unsafeIds);
+      fetchVehicles();
+    } catch {}
+  };
+
+  const handleDocAction = () => setDocAction(null);
+  const getDriverName = (v: Vehicle) => (v.driver as any)?.user?.full_name || null;
+  const isInsuranceExpired = isExpiredDate;
+  const isInsuranceExpiringSoon = isExpiringSoonDate;
+
+  const getDocuments = (v: Vehicle): DocRecord[] => [
+    {
+      type: "registration",
+      label: "Registration Card",
+      url: v.vehicle_registration_url,
+      expiry_date: v.insurance_expiry,
+      status: v.vehicle_registration_url
+        ? (isInsuranceExpired(v.insurance_expiry) ? "expired" : "verified")
+        : "pending",
+      uploaded_at: v.created_at
+    },
+
+    {
+      type: "insurance",
+      label: "Insurance Card",
+      url: v.vehicle_insurance_url,
+      expiry_date: v.insurance_expiry,
+      status: !v.vehicle_insurance_url
+        ? "pending"
+        : isInsuranceExpired(v.insurance_expiry)
+          ? "expired"
+          : isInsuranceExpiringSoon(v.insurance_expiry)
+            ? "expired"
+            : "verified",
+      uploaded_at: v.created_at
+    },
+
+    {
+      type: "fitness",
+      label: "Fitness Certificate",
+      expiry_date: v.inspection_date,
+      status:
+        v.inspection_status === "passed"
+          ? "verified"
+          : v.inspection_status === "pending"
+            ? "pending"
+            : "expired"
+    },
+
+    {
+      type: "road_tax",
+      label: "Road Tax",
+      status:
+        v.vehicle_registration_url
+          ? "verified"
+          : "pending"
+    },
+
+    {
+      type: "photos",
+      label: "Vehicle Photos",
+      status:
+        v.vehicle_photo_urls?.length
+          ? "verified"
+          : "pending"
+    }
+  ];
+
+  const total = vehicles.length; const active = vehicles.filter(v => v.is_active).length;
+  const pending = vehicles.filter(v => v.inspection_status === "pending").length;
+  const expiring = vehicles.filter(v => v.inspection_status === "expired" || isInsuranceExpiringSoon(v.insurance_expiry)).length;
+  const assigned = vehicles.filter(v => v.driver_id).length; const unassigned = total - assigned;
+  const inspectionDue = vehicles.filter(v => v.inspection_status === "pending").length;
+  const fleetOwned = vehicles.filter(v => !v.driver_id && v.is_active).length;
+  const suspended = vehicles.filter(v => !v.is_active).length;
+  const rejected = vehicles.filter(v => v.inspection_status === "rejected").length;
+
+  return (
+    <div className="space-y-8">
+      {/* ── HEADER ── */}
+      <div className="flex items-center justify-between min-h-[80px]">
+        <div>
+          <h1 className="text-[32px] font-bold text-gray-900 leading-tight">Vehicles</h1>
+          <p className="text-base text-gray-400 font-normal mt-1">Manage fleet, inspections and approvals</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSuspendUnsafeVehicles} className="flex items-center gap-2.5 h-12 px-5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 shadow-sm transition-all">
+            <Ban className="h-5 w-5" /> Suspend Unsafe
+          </button>
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2.5 h-12 px-6 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 shadow-sm shadow-green-200 transition-all">
+            <Plus className="h-5 w-5" /> Add Vehicle
+          </button>
+        </div>
+      </div>
+
+      {/* ── METRIC CARDS (2 rows × 5) ── */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <MCard icon={Car} label="Total Vehicles" sub="All registered vehicles" value={total} color="text-blue-600" bg="bg-blue-50" />
+          <MCard icon={CheckCircle} label="Active Vehicles" sub="Available for trips" value={active} color="text-green-600" bg="bg-green-50" />
+          <MCard icon={Clock} label="Pending Approval" sub="Awaiting review" value={pending} color="text-amber-600" bg="bg-amber-50" />
+          <MCard icon={AlertTriangle} label="Expiring Docs" sub="Within 30 days" value={expiring} color="text-red-600" bg="bg-red-50" />
+          <MCard icon={XCircle} label="Rejected" sub="Failed inspection/docs" value={rejected} color="text-red-600" bg="bg-red-50" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <MCard icon={UserPlus} label="Assigned" sub="Has driver" value={assigned} color="text-purple-600" bg="bg-purple-50" />
+          <MCard icon={UserMinus} label="Unassigned" sub="No driver" value={unassigned} color="text-gray-600" bg="bg-gray-50" />
+          <MCard icon={Truck} label="Fleet Owned" sub="Company vehicles" value={fleetOwned} color="text-indigo-600" bg="bg-indigo-50" />
+          <MCard icon={Ban} label="Suspended" sub="Inactive" value={suspended} color="text-orange-600" bg="bg-orange-50" />
+          <MCard icon={Shield} label="Inspection Due" sub="Needs check" value={inspectionDue} color="text-cyan-600" bg="bg-cyan-50" />
+        </div>
+      </div>
+
+      {/* ── FILTER BAR ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-wrap items-center gap-3 min-h-[80px]">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input type="text" placeholder="Search vehicle, driver, plate..." value={search} onChange={e => setSearch(e.target.value)} className="w-full h-12 pl-10 pr-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white" />
+        </div>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[130px]"><option value="all">All Types</option><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="boda">WeAfrica Boda</option></select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[120px]"><option value="all">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+        <select value={docFilter} onChange={e => setDocFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[140px]"><option value="all">All Documents</option><option value="verified">Verified</option><option value="expiring">Expiring</option></select>
+        <button onClick={() => { setSearch(""); setTypeFilter("all"); setStatusFilter("all"); setDocFilter("all"); }} className="h-12 px-5 text-sm font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Reset</button>
+      </div>
+
+      {/* ── VEHICLE CARDS GRID ── */}
+      {loading ? (
+        <div className="flex items-center justify-center py-24"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div></div>
+      ) : filteredVehicles.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-200 py-24 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-2xl mb-5"><Car className="h-9 w-9 text-gray-400" /></div>
+          <p className="text-lg font-semibold text-gray-900">No Vehicles Found</p>
+          <p className="text-sm text-gray-400 mt-1.5 max-w-xs mx-auto">Add vehicles to begin onboarding drivers</p>
+          <button onClick={() => setShowAddModal(true)} className="mt-5 inline-flex items-center gap-2 h-11 px-5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700"><Plus className="h-4 w-4" /> Add Vehicle</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filteredVehicles.map(v => {
+            const vt = v.vehicle_type || "";
+            const Icon = VEHICLE_TYPE_ICONS[vt] || Car;
+            const typeLabel = VEHICLE_TYPE_LABELS[vt] || vt;
+            const driverName = getDriverName(v);
+            const insOk = v.insurance_expiry && !isInsuranceExpired(v.insurance_expiry);
+            const inspOk = v.inspection_status === "passed";
+            const insExp = isInsuranceExpiringSoon(v.insurance_expiry);
+            const readiness = getVehicleReadiness(v);
+            return (
+              <div key={v.id} className="bg-white rounded-[20px] border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
+                {/* Top: icon + info + badges */}
+                <div className="flex items-start gap-4">
+                  <div className="w-[72px] h-[72px] bg-green-50 rounded-2xl flex items-center justify-center flex-shrink-0"><Icon className="h-8 w-8 text-green-600" /></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-semibold text-gray-900 leading-tight truncate">{v.make} {v.model}</p>
+                    <p className="text-sm text-gray-400 font-mono mt-0.5">{v.plate_number}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{typeLabel}</span>
+                      <span className={`inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium ${v.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${v.is_active ? "bg-green-500" : "bg-red-500"}`} />{v.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Driver + City */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span title={readiness.message} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${readiness.className}`}>
+                      {readiness.label}
+                    </span>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${selectedVehicle?.id === v.id ? "bg-blue-100 text-blue-700" : v.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                      {v.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-sm"><span className="text-gray-400">Driver</span><span className="text-gray-900 font-medium">{driverName || <span className="text-gray-400 italic">Unassigned</span>}</span></div>
+                  <div className="flex items-center gap-1.5 text-sm"><span className="text-gray-400">City</span><span className="text-gray-500 font-medium">{(v as any).city || "—"}</span></div>
+                </div>
+
+                {/* Checklist */}
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <CRow ok={Boolean(insOk && !insExp)} warn={Boolean(insExp)} okText="✓ Verified" warnText="Expiring Soon" failText="Expired" label="Documents" />
+                  <CRow ok={Boolean(inspOk)} okText="✓ Passed" warnText={v.inspection_status || "Due"} failText="Failed" label="Inspection" />
+                  <CRow ok={Boolean(v.driver_id)} okText="✓ Assigned" warnText="Unassigned" failText="Unassigned" label="Assignment" />
+                  <CRow ok={true} okText="Connected" warnText="—" failText="—" label="Pricing" warn={false} />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button onClick={async () => { setSelectedVehicle(v); setShowDrawer(true); setDrawerTab("overview"); await loadPricing(v); }} className="flex-1 flex items-center justify-center gap-2 h-[44px] bg-gray-900 text-white rounded-xl text-xs font-semibold hover:bg-gray-800"><Eye className="h-4 w-4" /> View</button>
+                  {v.driver_id
+                    ? <button onClick={() => handleUnassignDriver(v.id)} className="flex items-center justify-center gap-1 h-[44px] px-4 rounded-xl text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100"><UserMinus className="h-4 w-4" /> Unassign</button>
+                    : <button onClick={() => { setSelectedVehicle(v); setShowAssignModal(true); }} className="flex items-center justify-center gap-1 h-[44px] px-4 rounded-xl text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100"><UserPlus className="h-4 w-4" /> Assign</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ═════════════ VEHICLE DRAWER ═════════════ */}
+      {showDrawer && selectedVehicle && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDrawer(false)} />
+          <div className="relative ml-auto bg-white w-full max-w-[520px] h-full shadow-2xl overflow-y-auto">
+            <div className="sticky top-0 bg-white z-10 border-b border-gray-200">
+              <div className="flex items-start justify-between px-6 py-5 gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-[100px] h-[100px] bg-blue-600 rounded-[20px] flex items-center justify-center text-white flex-shrink-0">
+                    {React.createElement(VEHICLE_TYPE_ICONS[selectedVehicle.vehicle_type || ""] || Car, { className: "h-12 w-12" })}
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-gray-900">{selectedVehicle.make} {selectedVehicle.model}</h2>
+                    <p className="text-sm text-gray-400 font-mono mt-0.5">{selectedVehicle.plate_number}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className={`inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium ${selectedVehicle.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{selectedVehicle.is_active ? "Active" : "Inactive"}</span>
+                      <span className="inline-flex items-center h-[28px] px-2.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""]}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {selectedVehicle.is_active ? <button onClick={() => handleSuspend(selectedVehicle.id)} className="h-8 px-3 bg-red-600 text-white rounded-lg text-xs font-medium flex items-center gap-1"><Ban className="h-3.5 w-3.5" /> Suspend</button> : <button onClick={() => handleReactivate(selectedVehicle.id)} className="h-8 px-3 bg-green-600 text-white rounded-lg text-xs font-medium">Reactivate</button>}
+                  <button onClick={() => handleDelete(selectedVehicle.id)} className="h-8 px-3 bg-gray-200 text-gray-700 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => setShowDrawer(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+                </div>
+              </div>
+              <div className="flex border-t border-gray-100 px-6 overflow-x-auto">
+                {(["overview", "documents", "inspection", "pricing", "maintenance", "history"] as const).map(t => (
+                  <button key={t} onClick={() => setDrawerTab(t)} className={`h-12 px-4 text-sm font-medium border-b-2 whitespace-nowrap capitalize transition-colors ${drawerTab === t ? "border-green-600 text-green-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>{t}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-6">
+              {drawerTab === "overview" && (
+                <div className="space-y-6">
+                  <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-gray-900">Vehicle Information</h3>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                      <Detail label="Vehicle Type" value={VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""] || "—"} />
+                      <Detail label="Plate Number" value={selectedVehicle.plate_number} />
+                      <Detail label="Make" value={selectedVehicle.make || "—"} />
+                      <Detail label="Model" value={selectedVehicle.model || "—"} />
+                      <Detail label="Year" value={selectedVehicle.year?.toString() || "—"} />
+                      <Detail label="Color" value={selectedVehicle.color || "—"} />
+                      <Detail label="Seats" value={selectedVehicle.seats?.toString() || "—"} />
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-gray-900">Assignment Information</h3>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                      <Detail label="Driver" value={getDriverName(selectedVehicle) || "Unassigned"} />
+                      <Detail label="Status" value={selectedVehicle.is_active ? "Active" : "Inactive"} />
+                      <Detail label="Readiness" value={getVehicleReadiness(selectedVehicle).label} />
+                      <Detail label="Readiness Notes" value={getVehicleReadiness(selectedVehicle).message} />
+                      <Detail label="Created" value={selectedVehicle.created_at ? new Date(selectedVehicle.created_at).toLocaleDateString("en-GB") : "—"} />
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+
+                      {!getVehicleReadiness(selectedVehicle).canActivate &&
+                        selectedVehicle.is_active && (
+                        <button
+                          onClick={() => handleSuspend(selectedVehicle.id)}
+                          className="flex items-center gap-2 h-10 px-4 bg-orange-600 text-white rounded-xl text-sm font-medium"
+                        >
+                          <Ban className="h-4 w-4" />
+                          Suspend Unsafe Vehicle
+                        </button>
+                      )}
+
+                      {selectedVehicle.driver_id
+                        ? (
+                        <button onClick={() => handleUnassignDriver(selectedVehicle.id)} className="flex items-center gap-2 h-10 px-4 bg-red-600 text-white rounded-xl text-sm font-medium">
+                          <UserMinus className="h-4 w-4" />
+                          Unassign Driver
+                        </button>
+                      )
+                        : (
+                        <button onClick={() => setShowAssignModal(true)} className="flex items-center gap-2 h-10 px-4 bg-green-600 text-white rounded-xl text-sm font-medium">
+                          <UserPlus className="h-4 w-4" />
+                          Assign Driver
+                        </button>
+                      )}
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {drawerTab === "documents" && (
+                <div className="space-y-3">
+                  {getDocuments(selectedVehicle).map((doc, i) => {
+                    const cfg = { verified: { color: "bg-green-100 text-green-700", icon: CheckCircle, label: "Verified" }, pending: { color: "bg-amber-100 text-amber-700", icon: Clock, label: "Pending" }, expired: { color: "bg-red-100 text-red-700", icon: AlertTriangle, label: "Expired" }, rejected: { color: "bg-red-100 text-red-700", icon: XCircle, label: "Rejected" } }[doc.status];
+                    return (
+                      <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 min-h-[100px]">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3"><div className="p-2 bg-green-50 rounded-lg"><FileText className="h-5 w-5 text-green-600" /></div>
+                            <div><p className="text-sm font-medium text-gray-900">{doc.label}</p>
+                              <div className="text-xs text-gray-400 space-y-0.5 mt-1">{doc.uploaded_at && <p>Uploaded: {formatDate(doc.uploaded_at)}</p>}{doc.expiry_date && <p>Expiry: {formatDate(doc.expiry_date)}</p>}{doc.reviewed_by && <p>Reviewed by: {doc.reviewed_by}</p>}{!doc.url && !doc.uploaded_at && <p>Not uploaded</p>}</div></div></div>
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${cfg.color}`}><cfg.icon className="h-3 w-3" /> {cfg.label}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                          {doc.url ? <button className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-50 rounded">View</button> : <button className="text-xs text-green-600 hover:text-green-800 px-2 py-1 hover:bg-green-50 rounded flex items-center gap-1"><Upload className="h-3 w-3" /> Upload</button>}
+                          {doc.status === "pending" && <button onClick={() => setDocAction({ doc, action: "approve" })} className="text-xs text-green-600 px-2 py-1 hover:bg-green-50 rounded"><CheckCircle className="h-3 w-3 inline" /> Approve</button>}
+                          {doc.status !== "rejected" && <button onClick={() => setDocAction({ doc, action: "reject" })} className="text-xs text-red-600 px-2 py-1 hover:bg-red-50 rounded"><XCircle className="h-3 w-3 inline" /> Reject</button>}
+                          {doc.status === "expired" && <button onClick={() => setDocAction({ doc, action: "reupload" })} className="text-xs text-orange-600 px-2 py-1 hover:bg-orange-50 rounded"><Upload className="h-3 w-3 inline" /> Request Re-upload</button>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {drawerTab === "inspection" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4"><Detail label="Last Inspection" value={selectedVehicle.inspection_date ? formatDate(selectedVehicle.inspection_date) : "N/A"} /><Detail label="Status" value={selectedVehicle.inspection_status || "N/A"} /></div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => supabase.from("vehicles").update({ inspection_status: "passed", inspection_date: new Date().toISOString() }).eq("id", selectedVehicle.id).then(() => { fetchVehicles(); setSelectedVehicle(prev => prev ? { ...prev, inspection_status: "passed" } : null); })} className="flex items-center gap-2 h-10 px-4 bg-green-600 text-white rounded-xl text-sm font-medium"><CheckCircle className="h-4 w-4" /> Pass Inspection</button>
+                    <button onClick={() => supabase.from("vehicles").update({ inspection_status: "rejected", inspection_date: new Date().toISOString() }).eq("id", selectedVehicle.id).then(() => { fetchVehicles(); setSelectedVehicle(prev => prev ? { ...prev, inspection_status: "rejected" } : null); })} className="flex items-center gap-2 h-10 px-4 bg-red-600 text-white rounded-xl text-sm font-medium"><XCircle className="h-4 w-4" /> Fail Inspection</button>
+                    <button className="flex items-center gap-2 h-10 px-4 bg-blue-600 text-white rounded-xl text-sm font-medium"><Calendar className="h-4 w-4" /> Schedule Inspection</button>
+                  </div>
+                </div>
+              )}
+
+              {drawerTab === "pricing" && (
+                <div className="space-y-4">
+                  {pricingCache[selectedVehicle.id] ? (
+                    <>
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3"><CheckCircle className="h-5 w-5 text-green-600" /><div><p className="text-sm font-medium text-green-800">Pricing Connected</p><p className="text-xs text-green-600">{VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""]}</p></div></div>
+                      <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                        {[["Base Fare", `${formatCurrency(pricingCache[selectedVehicle.id]!.base_fare)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Per KM", `${formatCurrency(pricingCache[selectedVehicle.id]!.per_km)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Per Minute", `${formatCurrency(pricingCache[selectedVehicle.id]!.per_min)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Booking Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.booking_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Waiting Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.waiting_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Cancellation Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.cancellation_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Surge", `${pricingCache[selectedVehicle.id]!.surge_multiplier}x`], ["Commission", `${pricingCache[selectedVehicle.id]!.commission_percent}%`]]
+                          .map(([k, v], i) => <div key={i} className="flex justify-between text-sm"><span className="text-gray-500">{k}</span><span className={`font-medium text-gray-900 ${k === "Commission" ? "font-bold" : ""}`}>{v}</span></div>)
+                        }
+                      </div>
+                      <a href="/admin/finance/pricing" className="flex items-center justify-between h-12 px-5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700"><span>Change Pricing Rule</span><ArrowUpRight className="h-4 w-4" /></a>
+                    </>
+                  ) : (
+                    <div className="bg-white rounded-xl border border-gray-200 p-12 text-center"><DollarSign className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">Loading pricing...</p></div>
+                  )}
+                </div>
+              )}
+
+              {drawerTab === "maintenance" && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-xl border border-gray-200 p-12 text-center"><Wrench className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">Maintenance Records</p><p className="text-sm text-gray-400 mt-1">Service history and maintenance logs</p></div>
+                  <button className="w-full flex items-center justify-center gap-2 h-12 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"><Plus className="h-4 w-4" /> Add Maintenance Record</button>
+                </div>
+              )}
+
+              {drawerTab === "history" && (
+                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center"><History className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">Trip & Activity History</p><p className="text-sm text-gray-400 mt-1">Trip records and admin actions for this vehicle</p></div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Document Action Dialog ═══ */}
+      {docAction && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl w-full max-w-sm mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold capitalize">{docAction.action} Document</h3>
+            <p className="text-sm text-gray-500">Confirm {docAction.action} of <strong>{docAction.doc.label}</strong></p>
+            <div className="flex gap-2"><button onClick={() => setDocAction(null)} className="flex-1 h-11 border rounded-xl text-sm">Cancel</button><button onClick={handleDocAction} className={`flex-1 h-11 text-white rounded-xl text-sm ${docAction.action === "reject" || docAction.action === "reupload" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}>Confirm</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Add Vehicle Modal ═══ */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-lg font-bold text-gray-900">Add New Vehicle</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {[{ l: "Plate Number", v: newVehicle.plate_number, k: "plate_number" }, { l: "Type", v: newVehicle.vehicle_type, k: "vehicle_type", s: true }, { l: "Make", v: newVehicle.make, k: "make" }, { l: "Model", v: newVehicle.model, k: "model" }, { l: "Year", v: newVehicle.year.toString(), k: "year", n: true }, { l: "Color", v: newVehicle.color, k: "color" }, { l: "Seats", v: newVehicle.seats.toString(), k: "seats", n: true }]
+                .map(({ l, k, s, n }) => (
+                  <div key={k}>
+                    <label className="block text-xs text-gray-500 mb-1.5">{l}</label>
+                    {s ? <select value={newVehicle[k as keyof typeof newVehicle] as string} onChange={e => setNewVehicle(p => ({ ...p, [k]: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm bg-white"><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="boda">WeAfrica Boda</option></select>
+                      : <input type={n ? "number" : "text"} value={newVehicle[k as keyof typeof newVehicle] as string} onChange={e => setNewVehicle(p => ({ ...p, [k]: n ? parseInt(e.target.value) || 0 : e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />}
+                  </div>
+                ))}
+            </div>
+            <div className="flex gap-3 pt-2"><button onClick={() => setShowAddModal(false)} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button><button onClick={handleAddVehicle} className="flex-1 h-11 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">Add Vehicle</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Assign Driver Modal ═══ */}
+      {showAssignModal && selectedVehicle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md mx-4 p-6 space-y-4">
+            <h2 className="text-lg font-bold">Assign Driver — {selectedVehicle.plate_number}</h2>
+            <p className="text-sm text-gray-500">Select a driver to assign to this vehicle</p>
+            <select value={assignDriverId} onChange={e => setAssignDriverId(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm"><option value="">Select driver...</option>{availableDrivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}</select>
+            <div className="flex gap-3"><button onClick={() => setShowAssignModal(false)} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button><button onClick={handleAssignDriver} className="flex-1 h-11 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">Assign</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────
+function MCard({ icon: Icon, label, sub, value, color, bg }: { icon: React.ComponentType<{ className?: string }>; label: string; sub: string; value: number; color: string; bg: string }) {
+  return (<div className={`${bg} rounded-[18px] p-5 min-h-[140px] flex flex-col gap-1`}><div className="w-11 h-11 rounded-xl bg-white/60 flex items-center justify-center mb-0.5"><Icon className={`h-6 w-6 ${color}`} /></div><p className="text-[38px] font-bold text-gray-900 leading-tight">{value.toLocaleString()}</p><p className="text-sm font-medium text-gray-700 leading-tight">{label}</p><p className="text-xs text-gray-400">{sub}</p></div>);
+}
+function Detail({ label, value }: { label: string; value: string }) {
+  return (<div><p className="text-xs text-gray-400 mb-0.5">{label}</p><p className="text-sm font-medium text-gray-900">{value}</p></div>);
+}
+function CRow({ label, ok, okText, warn, warnText, failText }: { label: string; ok: boolean; okText: string; warn?: boolean; warnText: string; failText: string }) {
+  const c = ok ? "text-green-500" : warn ? "text-amber-500" : "text-gray-400";
+  const t = ok ? okText : warn ? warnText : failText;
+  const tc = ok ? "text-green-600" : warn ? "text-amber-600" : "text-gray-500";
+  return (<div className="flex items-center gap-2 text-sm"><CheckCircle className={`h-4 w-4 ${c}`} /><span className="text-gray-500">{label}</span><span className={`ml-auto font-medium ${tc}`}>{t}</span></div>);
+}
