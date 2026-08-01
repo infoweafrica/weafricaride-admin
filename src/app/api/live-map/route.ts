@@ -29,7 +29,52 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message, code: error.code, details: error.details }, { status: 500 });
     }
 
-    return NextResponse.json({ drivers: locations || [], count: locations?.length ?? 0 });
+    const { data: activeRides, error: ridesError } = await supabase
+      .from("rides")
+      .select(
+        "id, status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, pickup_address, dropoff_address, " +
+          "estimated_fare, actual_fare, driver_id, driver:drivers(full_name), rider:riders(user:users(full_name))"
+      )
+      .in("status", ["requested", "searching", "assigned", "accepted", "en_route", "arrived", "picked_up", "in_progress"])
+      .limit(200);
+
+    if (ridesError) {
+      return NextResponse.json({ error: ridesError.message, code: ridesError.code, details: ridesError.details }, { status: 500 });
+    }
+
+    type RideRow = {
+      id: string;
+      status: string;
+      pickup_lat: number | null;
+      pickup_lng: number | null;
+      dropoff_lat: number | null;
+      dropoff_lng: number | null;
+      pickup_address: string | null;
+      dropoff_address: string | null;
+      estimated_fare: number | null;
+      actual_fare: number | null;
+      driver_id: string | null;
+      driver: { full_name: string } | { full_name: string }[] | null;
+      rider: { user: { full_name: string } | { full_name: string }[] | null } | { user: { full_name: string } | { full_name: string }[] | null }[] | null;
+    };
+    const first = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
+
+    const rides = ((activeRides || []) as unknown as RideRow[]).map((r) => ({
+      id: r.id,
+      status: r.status,
+      pickup_lat: r.pickup_lat,
+      pickup_lng: r.pickup_lng,
+      dropoff_lat: r.dropoff_lat,
+      dropoff_lng: r.dropoff_lng,
+      pickup_addr: r.pickup_address || "",
+      dropoff_addr: r.dropoff_address || "",
+      driver_id: r.driver_id || undefined,
+      driver_name: first(r.driver)?.full_name || undefined,
+      rider_name: first(first(r.rider)?.user ?? null)?.full_name || undefined,
+      fare: r.actual_fare ?? r.estimated_fare ?? undefined,
+    }));
+
+    return NextResponse.json({ drivers: locations || [], rides, count: locations?.length ?? 0 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

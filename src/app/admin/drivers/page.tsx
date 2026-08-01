@@ -51,6 +51,7 @@ import {
 import type { PaginatedResult } from "@/lib/api/base";
 
 // Dynamically import Leaflet map to avoid SSR issues
+import type { RideOnMap } from "@/app/admin/operations/live-map/LiveMapView";
 const LiveMapView = dynamic(() => import("@/app/admin/operations/live-map/LiveMapView"), {
   ssr: false,
   loading: () => (
@@ -233,8 +234,16 @@ function DriversContent() {
     setActionLoading(null);
   };
 
+  const handleSuspendFromMap = async (driverId: string) => {
+    if (!confirm("Suspend this driver?")) return;
+    setActionLoading(driverId);
+    if (await suspendDriver(driverId, "Suspended from live map")) loadData();
+    setActionLoading(null);
+  };
+
   // Live map driver locations from driver_locations table (real-time)
   const [liveLocations, setLiveLocations] = useState<DriverLocation[]>([]);
+  const [liveRides, setLiveRides] = useState<RideOnMap[]>([]);
 
   const tabs: { id: DriverTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "overview", label: "Overview", icon: BarChart3 },
@@ -286,6 +295,19 @@ function DriversContent() {
 
     fetchLocations();
 
+    const fetchRides = async () => {
+      try {
+        const res = await fetch("/api/live-map");
+        if (!res.ok) return;
+        const data = await res.json();
+        setLiveRides(data.rides || []);
+      } catch {
+        // silently ignore
+      }
+    };
+    fetchRides();
+    const ridesInterval = setInterval(fetchRides, 15000);
+
     const channel = supabase
       .channel("drivers_page_realtime")
       .on(
@@ -329,6 +351,7 @@ function DriversContent() {
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(ridesInterval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -583,7 +606,7 @@ function DriversContent() {
       {activeTab === "live" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden" style={{ minHeight: "500px" }}>
-            <LiveMapView drivers={liveLocations} />
+            <LiveMapView drivers={liveLocations} rides={liveRides} onForceOffline={handleForceOffline} onSuspendDriver={handleSuspendFromMap} />
           </div>
           <div className="bg-white rounded-xl border p-4">
             <h3 className="text-sm font-semibold mb-3">Active Drivers ({liveLocations.length})</h3>

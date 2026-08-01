@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import PermissionGuard from "@/components/guards/PermissionGuard";
 import { RefreshCw, Navigation, Users } from "lucide-react";
+import { forceDriverOffline, suspendDriver } from "@/lib/api/drivers";
+import type { RideOnMap } from "./LiveMapView";
 
 const LiveMapView = dynamic(() => import("./LiveMapView"), {
   ssr: false,
@@ -36,6 +38,7 @@ export default function LiveMapPage() {
 
 function LiveMapContent() {
   const [drivers, setDrivers] = useState<DriverLocation[]>([]);
+  const [rides, setRides] = useState<RideOnMap[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,12 +50,25 @@ function LiveMapContent() {
       if (!res.ok) throw new Error("Failed to fetch driver locations");
       const data = await res.json();
       setDrivers(data.drivers || []);
+      setRides(data.rides || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load driver locations");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleForceOffline = useCallback(async (driverId: string) => {
+    if (!confirm("Force this driver offline?")) return;
+    await forceDriverOffline(driverId);
+    fetchAllDriverLocations();
+  }, [fetchAllDriverLocations]);
+
+  const handleSuspend = useCallback(async (driverId: string) => {
+    if (!confirm("Suspend this driver?")) return;
+    await suspendDriver(driverId, "Suspended from live map");
+    fetchAllDriverLocations();
+  }, [fetchAllDriverLocations]);
 
   useEffect(() => {
     fetchAllDriverLocations();
@@ -91,7 +107,7 @@ function LiveMapContent() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3">
-          <LiveMapView drivers={drivers} />
+          <LiveMapView drivers={drivers} rides={rides} onForceOffline={handleForceOffline} onSuspendDriver={handleSuspend} />
         </div>
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100">
