@@ -149,17 +149,25 @@ export async function fetchWeeklyRides(cityId?: string): Promise<{ day: string; 
 }
 
 export async function reassignRideDriver(rideId: string): Promise<boolean> {
+  const { data: transition, error: transitionError } = await supabase.rpc("transition_trip_state", {
+    p_trip_id: rideId,
+    p_new_state: "searching",
+    p_actor_type: "system",
+    p_metadata: { reason: "Admin reassign" },
+  });
+
+  if (transitionError || !(transition as { success?: boolean } | null)?.success) {
+    console.error("reassignRideDriver:", transitionError ?? transition);
+    return false;
+  }
+
   const { error } = await supabase
     .from("rides")
-    .update({
-      driver_id: null,
-      status: "searching",
-      updated_at: new Date().toISOString(),
-    })
+    .update({ driver_id: null, updated_at: new Date().toISOString() })
     .eq("id", rideId);
 
   if (error) {
-    console.error("reassignRideDriver:", error);
+    console.error("reassignRideDriver (clear driver_id):", error);
     return false;
   }
 
@@ -167,16 +175,42 @@ export async function reassignRideDriver(rideId: string): Promise<boolean> {
 }
 
 export async function refundRide(rideId: string): Promise<boolean> {
-  const { error } = await supabase
-    .from("rides")
-    .update({
-      payment_status: "refunded",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", rideId);
+  const { data: payment, error: paymentError } = await supabase
+    .from("payments")
+    .select("id")
+    .eq("ride_id", rideId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (error) {
-    console.error("refundRide:", error);
+  if (paymentError || !payment) {
+    console.error("refundRide: no payment found for ride", paymentError);
+    return false;
+  }
+
+  const { data: refund, error: createError } = await supabase
+    .rpc("admin_create_refund", { p_payment_id: payment.id, p_reason: "Admin refund" })
+    .single();
+
+  if (createError) {
+    console.error("refundRide (create):", createError);
+    return false;
+  }
+
+  const refundId = (refund as { refund_id?: string } | null)?.refund_id;
+  if (!refundId) {
+    console.error("refundRide: admin_create_refund did not return a refund id");
+    return false;
+  }
+
+  const { error: processError } = await supabase.rpc("admin_process_refund", {
+    p_refund_id: refundId,
+    p_status: "approved",
+    p_admin_notes: "Admin refund",
+  });
+
+  if (processError) {
+    console.error("refundRide (process):", processError);
     return false;
   }
 

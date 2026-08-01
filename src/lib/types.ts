@@ -673,6 +673,10 @@ export interface Ride {
   category?: Record<string, any>;
   actual_fare?: number;
   estimated_fare?: number;
+  driver_earnings?: number;
+  company_commission?: number;
+  commission_amount?: number;
+  commission_rate?: number;
   created_at: string;
   base_fare?: number;
   actual_distance_km?: number;

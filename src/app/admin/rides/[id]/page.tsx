@@ -144,20 +144,62 @@ export default function RideDetailPage() {
 
   const handleCancelRide = async () => {
     if (!ride || !confirm("Are you sure you want to cancel this ride?")) return;
+    const { data: transition, error: transitionError } = await supabase.rpc("transition_trip_state", {
+      p_trip_id: rideId,
+      p_new_state: "system_cancelled",
+      p_actor_type: "system",
+      p_metadata: { reason: "Cancelled by admin" },
+    });
+    if (transitionError || !(transition as { success?: boolean } | null)?.success) {
+      setError(
+        transitionError?.message ??
+          (transition as { error?: string } | null)?.error ??
+          "Could not cancel ride"
+      );
+      return;
+    }
     const { error: cancelError } = await supabase
       .from("rides")
-      .update({ status: "admin_cancelled", cancelled_at: new Date().toISOString(), cancellation_reason: "Cancelled by admin" })
+      .update({ cancelled_at: new Date().toISOString(), cancellation_reason: "Cancelled by admin" })
       .eq("id", rideId);
     if (!cancelError) fetchRideDetails();
   };
 
   const handleRefundRide = async () => {
     if (!ride || !confirm("Process refund for this ride?")) return;
-    const { error: refundError } = await supabase
-      .from("rides")
-      .update({ payment_status: "refunded" })
-      .eq("id", rideId);
-    if (!refundError) fetchRideDetails();
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("id")
+      .eq("ride_id", rideId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (paymentError || !payment) {
+      setError(paymentError?.message ?? "No payment found for this ride");
+      return;
+    }
+    const { data: refund, error: createError } = await supabase
+      .rpc("admin_create_refund", { p_payment_id: payment.id, p_reason: "Admin refund" })
+      .single();
+    if (createError) {
+      setError(createError.message);
+      return;
+    }
+    const refundId = (refund as { refund_id?: string } | null)?.refund_id;
+    if (!refundId) {
+      setError("Refund creation did not return an id");
+      return;
+    }
+    const { error: processError } = await supabase.rpc("admin_process_refund", {
+      p_refund_id: refundId,
+      p_status: "approved",
+      p_admin_notes: "Admin refund",
+    });
+    if (processError) {
+      setError(processError.message);
+      return;
+    }
+    fetchRideDetails();
   };
 
   if (loading) {
@@ -480,14 +522,28 @@ export default function RideDetailPage() {
                     <span>Total Fare</span>
                     <span>{formatCurrency(ride.actual_fare || ride.estimated_fare || 0)}</span>
                   </div>
-                  <div className="flex justify-between p-3 text-sm text-green-700 bg-green-50">
-                    <span>Commission (platform)</span>
-                    <span>-{formatCurrency(Math.round((ride.actual_fare || ride.estimated_fare || 0) * 0.15))}</span>
-                  </div>
-                  <div className="flex justify-between p-3 text-sm font-semibold text-blue-700 bg-blue-50">
-                    <span>Driver Earnings</span>
-                    <span>{formatCurrency(Math.round((ride.actual_fare || ride.estimated_fare || 0) * 0.85))}</span>
-                  </div>
+                  {(() => {
+                    const totalFare = ride.actual_fare || ride.estimated_fare || 0;
+                    const hasLedgerData = ride.company_commission != null || ride.commission_amount != null || ride.driver_earnings != null;
+                    const commission = ride.company_commission ?? ride.commission_amount ?? Math.round(totalFare * 0.15);
+                    const earnings = ride.driver_earnings ?? Math.round(totalFare - commission);
+                    return (
+                      <>
+                        <div className="flex justify-between p-3 text-sm text-green-700 bg-green-50">
+                          <span>
+                            Commission (platform){!hasLedgerData && <span className="text-xs text-gray-400"> (estimated)</span>}
+                          </span>
+                          <span>-{formatCurrency(commission)}</span>
+                        </div>
+                        <div className="flex justify-between p-3 text-sm font-semibold text-blue-700 bg-blue-50">
+                          <span>
+                            Driver Earnings{!hasLedgerData && <span className="text-xs text-gray-400"> (estimated)</span>}
+                          </span>
+                          <span>{formatCurrency(earnings)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
