@@ -71,7 +71,7 @@ export async function fetchRoles(): Promise<AdminRole[]> {
     const roles: AdminRole[] = [];
 
     for (const role of data) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { data: permsData, error: permsError } = await supabase
         .from("role_permissions")
         .select("admin_permissions!inner(name)")
@@ -79,7 +79,7 @@ export async function fetchRoles(): Promise<AdminRole[]> {
 
       let perms: Permission[] = [];
       if (!permsError && permsData) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         perms = (permsData as any[])
           .map((p: any) => p.admin_permissions?.name)
           .filter(Boolean) as Permission[];
@@ -184,7 +184,7 @@ async function safeCount(
   val?: unknown
 ): Promise<number> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let q: any = supabase
       .from(table)
       .select("*", { count: "exact", head: true });

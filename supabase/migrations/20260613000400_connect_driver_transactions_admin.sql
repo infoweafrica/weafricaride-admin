@@ -1,17 +1,24 @@
--- ====================================
+-- ============================================
 -- Connect Driver Transactions to Admin Finance
--- ====================================
+-- ============================================
 
-ALTER TABLE public.payments
-  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS user_type TEXT,
-  ADD COLUMN IF NOT EXISTS type TEXT,
-  ADD COLUMN IF NOT EXISTS status TEXT,
-  ADD COLUMN IF NOT EXISTS reference TEXT,
-  ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'MWK';
+-- Step 1: Add columns to payments (if it exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'payments') THEN
+    ALTER TABLE public.payments
+      ADD COLUMN IF NOT EXISTS user_id UUID,
+      ADD COLUMN IF NOT EXISTS user_type TEXT,
+      ADD COLUMN IF NOT EXISTS type TEXT,
+      ADD COLUMN IF NOT EXISTS status TEXT,
+      ADD COLUMN IF NOT EXISTS reference TEXT,
+      ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'MWK';
+  END IF;
+END $$;
 
+-- Step 2: Function for payment compatibility
 CREATE OR REPLACE FUNCTION public.normalize_payment_compat_fields()
-RETURNS trigger
+RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
@@ -37,24 +44,46 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_normalize_payment_compat_fields ON public.payments;
-CREATE TRIGGER trg_normalize_payment_compat_fields
-  BEFORE INSERT OR UPDATE ON public.payments
-  FOR EACH ROW
-  EXECUTE FUNCTION public.normalize_payment_compat_fields();
+-- Step 3: Trigger (only if payments exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'payments') THEN
+    DROP TRIGGER IF EXISTS trg_normalize_payment_compat_fields ON public.payments;
+    CREATE TRIGGER trg_normalize_payment_compat_fields
+      BEFORE INSERT OR UPDATE ON public.payments
+      FOR EACH ROW
+      EXECUTE FUNCTION public.normalize_payment_compat_fields();
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS anon_insert_payments ON public.payments;
-CREATE POLICY anon_insert_payments ON public.payments FOR INSERT WITH CHECK (true);
+-- Step 4: RLS policies (only if tables exist)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'payments') THEN
+    DROP POLICY IF EXISTS anon_insert_payments ON public.payments;
+    CREATE POLICY anon_insert_payments ON public.payments FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS anon_read_ownish_payments ON public.payments;
+    CREATE POLICY anon_read_ownish_payments ON public.payments FOR SELECT USING (true);
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS anon_read_ownish_payments ON public.payments;
-CREATE POLICY anon_read_ownish_payments ON public.payments FOR SELECT USING (true);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'driver_transactions') THEN
+    DROP POLICY IF EXISTS anon_insert_driver_transactions ON public.driver_transactions;
+    CREATE POLICY anon_insert_driver_transactions ON public.driver_transactions FOR INSERT WITH CHECK (true);
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS anon_insert_driver_transactions ON public.driver_transactions;
-CREATE POLICY anon_insert_driver_transactions ON public.driver_transactions FOR INSERT WITH CHECK (true);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'driver_wallets') THEN
+    DROP POLICY IF EXISTS anon_update_driver_wallets ON public.driver_wallets;
+    CREATE POLICY anon_update_driver_wallets ON public.driver_wallets FOR UPDATE USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS anon_update_driver_wallets ON public.driver_wallets;
-CREATE POLICY anon_update_driver_wallets ON public.driver_wallets FOR UPDATE USING (true) WITH CHECK (true);
-
+-- Step 5: Admin transaction view function
 CREATE OR REPLACE FUNCTION public.admin_list_transactions_enriched(
     p_search TEXT DEFAULT '',
     p_status TEXT DEFAULT NULL,
@@ -106,7 +135,7 @@ BEGIN
             CASE WHEN dt.reference_type = 'ride' THEN dt.reference_id ELSE NULL::UUID END AS ride_id,
             dt.id AS driver_transaction_id,
             dt.transaction_type, ABS(dt.amount) AS gross_amount,
-            dt.payout_method AS payment_method, COALESCE(dt.status, 'completed') AS status,
+            dt.payout_method AS payment_method, COALESCE(dt.status,'completed') AS status,
             dt.payout_reference AS transaction_reference, dt.created_at,
             NULL::TEXT AS pickup_address, NULL::TEXT AS dropoff_address,
             NULL::NUMERIC AS distance_km, NULL::INTEGER AS duration_min,

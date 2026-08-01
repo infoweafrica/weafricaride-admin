@@ -5,7 +5,7 @@ import { MapPin, Navigation } from "lucide-react";
 
 export default function LiveMapPage() {
   const [activeDrivers, setActiveDrivers] = useState([
-    { id: "d1", name: "", lat: -13.9833, lng: 33.7833, status: "available", vehicle: "" },
+    { id: "d1", name: "James Chirwa", lat: -13.9833, lng: 33.7833, status: "available", vehicle: "LL 1234" },
     { id: "d3", name: "Peter Mwale", lat: -14.0167, lng: 33.7500, status: "on_ride", vehicle: "MZ 9012" },
   ]);
 

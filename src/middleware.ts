@@ -1,12 +1,19 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from 'next/server'
 
-// Auth is handled client-side via localStorage.
-// Middleware just passes through — redirects handled by auth-context on the client.
 export function middleware(request: NextRequest) {
-  return NextResponse.next();
+  // Admin route protection exists in each page layout via Supabase client-side auth
+  // This middleware handles basic redirects only
+
+  const { pathname } = request.nextUrl
+
+  // Redirect /admin to /admin/dashboard
+  if (pathname === '/admin') {
+    return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+  }
+
+  return NextResponse.next()
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/"],
-};
+  matcher: ['/admin/:path*'],
+}

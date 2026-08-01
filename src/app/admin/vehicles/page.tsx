@@ -1,73 +1,47 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { Vehicle } from "@/lib/types";
 import {
-  Search, Plus, Eye, Edit2, MoreHorizontal, CheckCircle, XCircle, X, Shield, AlertTriangle,
-  Car, Bike, Truck, UserPlus, UserMinus, Clock, FileText, Wrench,
-  DollarSign, Ban, Trash2, Upload, Calendar, ArrowUpRight, MapPin, History,
+  Search,
+  Eye,
+  CheckCircle,
+  XCircle,
+  X,
+  Phone,
+  Car,
+  FileText,
+  Clock,
+  Ban,
+  Shield,
+  AlertTriangle,
+  BarChart3,
+  Users,
+  DollarSign,
+  Wrench,
+  ClipboardList,
+  Calendar,
+  MapPin,
+  Plus,
+  UserPlus,
+  UserMinus,
+  Navigation,
+  Truck,
+  Bike,
 } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate, formatCurrency, getStatusColor } from "@/lib/utils";
 
-const VEHICLE_TYPE_LABELS: Record<string, string> = {
-  economy: "WeAfrica X", comfort: "WeAfrica Comfort", xl: "WeAfrica XL",
-  boda: "WeAfrica Boda", luxury: "WeAfrica Black", delivery: "WeAfrica Delivery",
-};
-const VEHICLE_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  economy: Car, comfort: Car, xl: Truck, boda: Bike, luxury: Car, delivery: Truck,
-};
+type VehicleTab = "overview" | "all" | "types" | "documents" | "inspections" | "assignment" | "fleet" | "maintenance";
 
-interface PricingInfo {
-  base_fare: number; per_km: number; per_min: number;
-  booking_fee: number; waiting_fee: number; cancellation_fee: number;
-  surge_multiplier: number; commission_percent: number; currency: string;
-}
-interface DocRecord {
-  type: string; label: string; url?: string; uploaded_at?: string;
-  expiry_date?: string; status: "verified" | "pending" | "expired" | "rejected"; reviewed_by?: string;
-}
-
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-
-function isExpiredDate(expiry?: string) {
-  return !expiry || new Date(expiry).getTime() < new Date().getTime();
-}
-
-function isExpiringSoonDate(expiry?: string) {
-  if (!expiry || isExpiredDate(expiry)) return false;
-  return new Date(expiry).getTime() < new Date().getTime() + THIRTY_DAYS_MS;
-}
-
-function getVehicleReadiness(v: Vehicle) {
-  const verified = (v as any).vehicle_verified === true;
-  const active = v.is_active === true || (v as any).status === "active";
-  const hasBasics = Boolean(v.plate_number && v.make && v.model);
-
-  if (verified && active && hasBasics) {
-    return {
-      label: "Ready",
-      message: "Vehicle is verified and ready for trips",
-      className: "bg-green-100 text-green-700",
-      canActivate: true,
-    };
-  }
-
-  if (verified && hasBasics) {
-    return {
-      label: "Needs Activation",
-      message: "Vehicle is verified but not active",
-      className: "bg-amber-100 text-amber-700",
-      canActivate: true,
-    };
-  }
-
-  return {
-    label: "Needs Review",
-    message: "Vehicle documents or approval are still pending",
-    className: "bg-amber-100 text-amber-700",
-    canActivate: false,
-  };
+interface VehicleTypeRow {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string;
+  seats: number;
+  is_active: boolean;
+  count: number;
 }
 
 export default function VehiclesPage() {
@@ -76,685 +50,786 @@ export default function VehiclesPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [docFilter, setDocFilter] = useState("all");
+  const [cityFilter, setCityFilter] = useState("all");
   const [loading, setLoading] = useState(true);
-
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
-  const [showDrawer, setShowDrawer] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<"overview" | "documents" | "inspection" | "pricing" | "maintenance" | "history">("overview");
-  const [pricingCache, setPricingCache] = useState<Record<string, PricingInfo | null>>({});
-  const [docAction, setDocAction] = useState<{ doc: DocRecord; action: "approve" | "reject" | "reupload" } | null>(null);
-  const [maintenanceRecords, setMaintenanceRecords] = useState<any[]>([]);
-  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
-  const [maintenanceForm, setMaintenanceForm] = useState({
-    title: "Service",
-    description: "",
-    cost: "",
-    mileage: "",
-    service_date: new Date().toISOString().slice(0, 10),
-    next_service_date: "",
-  });
-
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignDriverId, setAssignDriverId] = useState("");
-  const [newVehicle, setNewVehicle] = useState({ plate_number: "", make: "", model: "", year: new Date().getFullYear(), color: "White", vehicle_type: "economy", seats: 4, driver_id: "" });
-  const [availableDrivers, setAvailableDrivers] = useState<{ id: string; full_name: string }[]>([]);
+  const [detailTab, setDetailTab] = useState<"info" | "documents" | "inspections" | "trips">("info");
+  const [activeTab, setActiveTab] = useState<VehicleTab>("overview");
+  const [newVehicle, setNewVehicle] = useState({
+    plate_number: "", make: "", model: "", year: new Date().getFullYear(), color: "White",
+    vehicle_type: "economy", seats: 4, driver_id: ""
+  });
+  const [onTripCount, setOnTripCount] = useState(0);
+
+  // Available drivers for assignment dropdown
+  const [availableDrivers, setAvailableDrivers] = useState<{ id: string; full_name: string; plate_number?: string }[]>([]);
+
+  // Vehicle classes for the class-assignment dropdown
+  const [vehicleClasses, setVehicleClasses] = useState<{ id: string; name: string; slug: string }[]>([]);
 
   useEffect(() => {
-    supabase.from("drivers").select("id, user:users(full_name)").eq("is_approved", true).then(({ data }) => {
-      if (data) setAvailableDrivers((data as any[]).map((d: any) => ({ id: d.id, full_name: d.user?.full_name || "Unknown" })));
-    });
+    async function loadVehicleClasses() {
+      try {
+        const { data } = await supabase.from("vehicle_classes")
+          .select("id, name, slug")
+          .eq("is_active", true)
+          .order("sort_order");
+        setVehicleClasses(data || []);
+      } catch {
+        // ignore
+      }
+    }
+    loadVehicleClasses();
+  }, []);
+
+  useEffect(() => {
+    async function loadDrivers() {
+      try {
+        const { data } = await supabase.from("drivers")
+          .select("id, user:users(full_name), vehicle:vehicles(plate_number)")
+          .eq("is_approved", true);
+        if (data) {
+          setAvailableDrivers(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (data as any[]).map((d) => ({
+              id: d.id,
+              full_name: d.user?.full_name || "Unknown",
+              plate_number: d.vehicle?.plate_number || undefined,
+            }))
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadDrivers();
+  }, []);
+
+  // Real "On Trip" count from rides table
+  useEffect(() => {
+    async function loadOnTripCount() {
+      try {
+        const { count } = await supabase.from("rides")
+          .select("*", { count: "exact", head: true })
+          .in("status", ["in_progress", "accepted", "driver_arriving", "driver_arrived"]);
+        setOnTripCount(count ?? 0);
+      } catch {
+        // ignore
+      }
+    }
+    loadOnTripCount();
   }, []);
 
   const fetchVehicles = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: vData } = await supabase.from("vehicles").select("*").order("created_at", { ascending: false });
-      const vList = ((vData || []) as unknown as Vehicle[]);
-
-      // Build set of known driver_ids from vehicles.driver_id
-      const directDriverIds = new Set(vList.map(v => v.driver_id).filter(Boolean));
-
-      // Also fetch drivers who reference these vehicles via drivers.vehicle_id (reverse link)
-      const vehicleIds = vList.map(v => v.id);
-      if (vehicleIds.length > 0) {
-        const { data: driversWithVehicle } = await supabase
-          .from("drivers")
-          .select("id, vehicle_id, user:users(full_name, phone)")
-          .in("vehicle_id", vehicleIds);
-
-        const driverMap: Record<string, any> = {};
-        (driversWithVehicle as any[])?.forEach((d: any) => {
-          driverMap[d.id] = d.user || {};
-          // Backfill vehicles.driver_id from drivers.vehicle_id if missing
-          const v = vList.find(ve => ve.id === d.vehicle_id);
-          if (v && !v.driver_id) {
-            v.driver_id = d.id;
-          }
-        });
-
-        // Also fetch any drivers referenced by vehicles.driver_id not already fetched
-        const allDriverIds = [...new Set([...directDriverIds, ...(driversWithVehicle as any[] || []).map((d: any) => d.id)])];
-        const missingIds = allDriverIds.filter(id => !driverMap[id]);
-
-        if (missingIds.length > 0) {
-          const { data: extraDrivers } = await supabase
-            .from("drivers")
-            .select("id, user:users(full_name, phone)")
-            .in("id", missingIds);
-          (extraDrivers as any[])?.forEach((d: any) => { driverMap[d.id] = d.user || {}; });
-        }
-
-        // Assign driver info to vehicles
-        vList.forEach(v => { if (v.driver_id && driverMap[v.driver_id]) v.driver = driverMap[v.driver_id] as any; });
-      }
-
-      setVehicles(vList);
-    } catch { setVehicles([]); }
-    finally { setLoading(false); }
+      const { data } = await supabase
+        .from("vehicles")
+        .select("*, driver:drivers(user:users(full_name, phone)), vehicle_class:vehicle_classes(id, name, slug)")
+        .order("created_at", { ascending: false });
+      setVehicles((data as Vehicle[]) || []);
+    } catch {
+      setVehicles([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
-
-  useEffect(() => {
+  const filterVehicles = useCallback(() => {
     let filtered = [...vehicles];
-    if (search) { const s = search.toLowerCase(); filtered = filtered.filter(v => v.plate_number?.toLowerCase().includes(s) || v.make?.toLowerCase().includes(s) || v.model?.toLowerCase().includes(s) || (((v.driver as any)?.full_name || (v.driver as any)?.user?.full_name || "").toLowerCase().includes(s))); }
+    if (search) {
+      const s = search.toLowerCase();
+      filtered = filtered.filter(v =>
+        v.plate_number?.toLowerCase().includes(s) ||
+        v.make?.toLowerCase().includes(s) ||
+        v.model?.toLowerCase().includes(s) ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((v.driver as any)?.user?.full_name?.toLowerCase().includes(s))
+      );
+    }
     if (typeFilter !== "all") filtered = filtered.filter(v => v.vehicle_type === typeFilter);
     if (statusFilter === "active") filtered = filtered.filter(v => v.is_active);
     if (statusFilter === "inactive") filtered = filtered.filter(v => !v.is_active);
-    if (docFilter === "expiring") filtered = filtered.filter(v => isExpiringSoonDate(v.insurance_expiry));
-    if (docFilter === "verified") filtered = filtered.filter(v => v.inspection_status === "passed");
     setFilteredVehicles(filtered);
-  }, [search, typeFilter, statusFilter, docFilter, vehicles]);
+  }, [search, typeFilter, statusFilter, cityFilter, vehicles]);
 
-  const loadPricing = async (vehicle: Vehicle) => {
-    const key = vehicle.id;
-    if (pricingCache[key] !== undefined) return pricingCache[key];
-    try {
-      const { data } = await supabase.from("pricing_config").select("*").eq("vehicle_type", vehicle.vehicle_type || "").eq("is_active", true).limit(1);
-      const firstRow = (data as any[])?.[0] || null;
-      const info: PricingInfo | null = firstRow ? { base_fare: firstRow.base_fare, per_km: firstRow.per_km, per_min: firstRow.per_min, booking_fee: firstRow.booking_fee ?? 0, waiting_fee: firstRow.waiting_fee ?? 0, cancellation_fee: firstRow.cancellation_fee ?? 0, surge_multiplier: firstRow.surge_multiplier ?? 1, commission_percent: firstRow.commission_percent ?? 0, currency: firstRow.currency ?? "MWK" } : null;
-      setPricingCache(prev => ({ ...prev, [key]: info })); return info;
-    } catch { setPricingCache(prev => ({ ...prev, [key]: null })); return null; }
+  useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
+  useEffect(() => { filterVehicles(); }, [filterVehicles]);
+
+  const handleAddVehicle = async () => {
+    try { await supabase.from("vehicles").insert(newVehicle); fetchVehicles(); setShowAddModal(false); } catch { /* ignore */ }
   };
 
-  const handleAddVehicle = async () => { try { await supabase.from("vehicles").insert(newVehicle); fetchVehicles(); setShowAddModal(false); } catch {} };
-  const handleAssignDriver = async () => { if (!selectedVehicle || !assignDriverId) return; try { await supabase.from("vehicles").update({ driver_id: assignDriverId }).eq("id", selectedVehicle.id); fetchVehicles(); setShowAssignModal(false); setAssignDriverId(""); } catch {} };
-  const handleUnassignDriver = async (vehicleId: string) => { try { await supabase.from("vehicles").update({ driver_id: null }).eq("id", vehicleId); fetchVehicles(); } catch {} };
-  const handleSuspend = async (id: string) => { try { await supabase.from("vehicles").update({ is_active: false }).eq("id", id); fetchVehicles(); setShowDrawer(false); } catch {} };
-  const handleReactivate = async (id: string) => {
-    const vehicle = vehicles.find(v => v.id === id);
-    if (vehicle) {
-      const readiness = getVehicleReadiness(vehicle);
-      if (!readiness.canActivate) {
-        alert(`Cannot activate vehicle yet. ${readiness.message}`);
-        return;
-      }
-    }
+  const handleApprove = async (id: string) => {
+    try { await supabase.from("vehicles").update({ is_active: true }).eq("id", id); fetchVehicles(); } catch { /* ignore */ }
+  };
 
+  const handleSuspend = async (id: string) => {
+    try { await supabase.from("vehicles").update({ is_active: false }).eq("id", id); fetchVehicles(); } catch { /* ignore */ }
+  };
+
+  const handleAssignClass = async (vehicleId: string, vehicleClassId: string) => {
     try {
-      await supabase.from("vehicles").update({ is_active: true }).eq("id", id);
+      await supabase.from("vehicles").update({ vehicle_class_id: vehicleClassId || null }).eq("id", vehicleId);
       fetchVehicles();
-    } catch {}
+    } catch { /* ignore */ }
   };
-  const handleDelete = async (id: string) => { if (!confirm("Permanently delete this vehicle?")) return; try { await supabase.from("vehicles").delete().eq("id", id); fetchVehicles(); setShowDrawer(false); } catch {} };
 
-  const handleSuspendUnsafeVehicles = async () => {
-    const unsafeIds = vehicles
-      .filter(v => v.is_active && !getVehicleReadiness(v).canActivate)
-      .map(v => v.id);
-
-    if (unsafeIds.length === 0) {
-      alert("No unsafe active vehicles found.");
-      return;
-    }
-
-    if (!confirm(`Suspend ${unsafeIds.length} unsafe active vehicle(s)?`)) return;
-
+  const handleAssignDriver = async () => {
+    if (!selectedVehicle || !assignDriverId) return;
     try {
-      await supabase.from("vehicles").update({ is_active: false }).in("id", unsafeIds);
+      await supabase.from("vehicles").update({ driver_id: assignDriverId }).eq("id", selectedVehicle.id);
       fetchVehicles();
-    } catch {}
+      setShowAssignModal(false);
+      setAssignDriverId("");
+    } catch { /* ignore */ }
   };
 
-  const fetchMaintenanceRecords = async (vehicleId: string) => {
-    const { data, error } = await supabase
-      .from("vehicle_maintenance_records")
-      .select("*")
-      .eq("vehicle_id", vehicleId)
-      .order("service_date", { ascending: false });
-
-    if (!error) setMaintenanceRecords(data || []);
+  const handleUnassignDriver = async (vehicleId: string) => {
+    try { await supabase.from("vehicles").update({ driver_id: null }).eq("id", vehicleId); fetchVehicles(); } catch { /* ignore */ }
   };
 
-  const handleAddMaintenance = async () => {
-    if (!selectedVehicle) return;
+  const isInsuranceExpired = (expiry?: string) => !expiry || new Date(expiry) < new Date();
 
-    const { error } = await supabase.from("vehicle_maintenance_records").insert({
-      vehicle_id: selectedVehicle.id,
-      title: maintenanceForm.title,
-      description: maintenanceForm.description,
-      cost: Number(maintenanceForm.cost || 0),
-      mileage: maintenanceForm.mileage ? Number(maintenanceForm.mileage) : null,
-      service_date: maintenanceForm.service_date || new Date().toISOString(),
-      next_service_date: maintenanceForm.next_service_date || null,
-    });
+  // Stats — all computed from real vehicles data
+  const totalVehicles = vehicles.length;
+  const activeCount = vehicles.filter(v => v.is_active).length;
+  const pendingCount = vehicles.filter(v => v.inspection_status === "pending").length;
+  const expiredDocs = vehicles.filter(v => v.inspection_status === "expired" || isInsuranceExpired(v.insurance_expiry)).length;
+  const onlineCount = vehicles.filter(v => (v.driver as unknown as { is_online?: boolean })?.is_online).length;
+  const fleetCount = vehicles.filter(v => v.driver_id).length;
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    setShowMaintenanceModal(false);
-    setMaintenanceForm({
-      title: "Service",
-      description: "",
-      cost: "",
-      mileage: "",
-      service_date: new Date().toISOString().slice(0, 10),
-      next_service_date: "",
-    });
-    fetchMaintenanceRecords(selectedVehicle.id);
-  };
-
-  const handleDocAction = async () => {
-    if (!selectedVehicle || !docAction) return;
-
-    const updates: any = { updated_at: new Date().toISOString() };
-
-    if (docAction.action === "approve") {
-      if (docAction.doc.type === "registration") updates.registration_verified = true;
-      if (docAction.doc.type === "insurance") updates.insurance_verified = true;
-      if (docAction.doc.type === "fitness") updates.inspection_status = "passed";
-      if (docAction.doc.type === "road_tax") updates.road_tax_verified = true;
-      if (docAction.doc.type === "photos") updates.vehicle_photos_verified = true;
-    }
-
-    if (docAction.action === "reject") {
-      if (docAction.doc.type === "fitness") updates.inspection_status = "rejected";
-      updates.status = "pending_review";
-    }
-
-    const { error } = await supabase
-      .from("vehicles")
-      .update(updates)
-      .eq("id", selectedVehicle.id);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    setSelectedVehicle(prev => prev ? { ...prev, ...updates } : prev);
-    setDocAction(null);
-    fetchVehicles();
-  };
-  const getDriverName = (v: Vehicle) => (v.driver as any)?.full_name || (v.driver as any)?.user?.full_name || null;
-  const isInsuranceExpired = isExpiredDate;
-  const isInsuranceExpiringSoon = isExpiringSoonDate;
-
-  const getDocuments = (v: Vehicle): DocRecord[] => [
-    {
-      type: "registration",
-      label: "Registration Card",
-      url: ((v as any).vehicle_registration_url || (v as any).registration_document_url || (v as any).registration_doc_url),
-      expiry_date: v.insurance_expiry,
-      status: (v as any).registration_verified
-        ? "verified"
-        : ((v as any).vehicle_registration_url || (v as any).registration_document_url || (v as any).registration_doc_url)
-          ? "pending"
-          : "pending",
-      uploaded_at: v.created_at
-    },
-
-    {
-      type: "insurance",
-      label: "Insurance Card",
-      url: ((v as any).insurance_document_url || (v as any).insurance_doc_url),
-      expiry_date: v.insurance_expiry,
-      status: (v as any).insurance_verified
-        ? "verified"
-        : !((v as any).insurance_document_url || (v as any).insurance_doc_url)
-          ? "pending"
-          : isInsuranceExpired(v.insurance_expiry)
-            ? "expired"
-            : "pending",
-      uploaded_at: v.created_at
-    },
-
-    {
-      type: "fitness",
-      label: "Fitness Certificate",
-      expiry_date: v.inspection_date,
-      status:
-        v.inspection_status === "passed"
-          ? "verified"
-          : v.inspection_status === "rejected"
-            ? "rejected"
-            : "pending"
-    },
-
-    {
-      type: "road_tax",
-      label: "Road Tax",
-      status:
-        (v as any).road_tax_verified
-          ? "verified"
-          : "pending"
-    },
-
-    {
-      type: "photos",
-      label: "Vehicle Photos",
-      status:
-        (v as any).vehicle_photos_verified
-          ? "verified"
-          : "pending"
-    }
+  // ── Consumer Ride Services ──
+  const consumerTypes: VehicleTypeRow[] = [
+    { id: "ct1", name: "WeAfrica X", slug: "economy", icon: "car", seats: 4, is_active: true, count: vehicles.filter(v => v.vehicle_type === "economy").length },
+    { id: "ct2", name: "WeAfrica Comfort", slug: "comfort", icon: "car", seats: 4, is_active: true, count: vehicles.filter(v => v.vehicle_type === "comfort").length },
+    { id: "ct3", name: "WeAfrica XL", slug: "xl", icon: "van", seats: 7, is_active: true, count: vehicles.filter(v => v.vehicle_type === "xl").length },
+    { id: "ct4", name: "WeAfrica Black", slug: "luxury", icon: "car", seats: 4, is_active: true, count: vehicles.filter(v => v.vehicle_type === "luxury").length },
+    { id: "ct5", name: "WeAfrica Taxi", slug: "taxi", icon: "car", seats: 4, is_active: true, count: vehicles.filter(v => v.vehicle_type === "taxi").length },
+    { id: "ct6", name: "WeAfrica Women", slug: "women_only", icon: "car", seats: 4, is_active: false, count: vehicles.filter(v => v.vehicle_type === "women_only").length },
+    { id: "ct7", name: "WeAfrica Electric", slug: "electric", icon: "car", seats: 4, is_active: false, count: vehicles.filter(v => v.vehicle_type === "electric").length },
   ];
 
-  const total = vehicles.length; const active = vehicles.filter(v => v.is_active).length;
-  const pending = vehicles.filter(v => (v as any).status === "pending_review" || v.inspection_status === "pending").length;
-  const expiring = vehicles.filter(v => v.inspection_status === "expired" || isInsuranceExpiringSoon(v.insurance_expiry)).length;
-  const assigned = vehicles.filter(v => v.driver_id).length; const unassigned = total - assigned;
-  const inspectionDue = vehicles.filter(v => !v.inspection_status || v.inspection_status === "pending").length;
-  const fleetOwned = vehicles.filter(v => !v.driver_id && v.is_active).length;
-  const suspended = vehicles.filter(v => !v.is_active).length;
-  const rejected = vehicles.filter(v => v.inspection_status === "rejected").length;
+  // ── Bike / Delivery Services ──
+  const deliveryTypes: VehicleTypeRow[] = [
+    { id: "dt1", name: "WeAfrica Boda", slug: "boda", icon: "bike", seats: 1, is_active: true, count: vehicles.filter(v => v.vehicle_type === "boda").length },
+    { id: "dt2", name: "WeAfrica Delivery Bike", slug: "delivery_bike", icon: "bike", seats: 1, is_active: false, count: vehicles.filter(v => v.vehicle_type === "delivery_bike").length },
+    { id: "dt3", name: "WeAfrica Delivery Van", slug: "delivery_van", icon: "truck", seats: 2, is_active: false, count: vehicles.filter(v => v.vehicle_type === "delivery_van").length },
+  ];
+
+  // ── Commercial / Shared ──
+  const commercialTypes: VehicleTypeRow[] = [
+    { id: "cm1", name: "WeAfrica Minibus", slug: "minibus", icon: "truck", seats: 18, is_active: false, count: vehicles.filter(v => v.vehicle_type === "minibus").length },
+    { id: "cm2", name: "WeAfrica Shuttle", slug: "shuttle", icon: "truck", seats: 14, is_active: false, count: vehicles.filter(v => v.vehicle_type === "shuttle").length },
+  ];
+
+  // ── Business ──
+  const businessTypes: VehicleTypeRow[] = [
+    { id: "bt1", name: "WeAfrica Corporate", slug: "corporate", icon: "car", seats: 4, is_active: false, count: vehicles.filter(v => v.vehicle_type === "corporate").length },
+    { id: "bt2", name: "WeAfrica Rentals", slug: "rental", icon: "car", seats: 4, is_active: false, count: vehicles.filter(v => v.vehicle_type === "rental").length },
+  ];
+
+  const vehicleTypeCounts: VehicleTypeRow[] = [
+    ...consumerTypes,
+    ...deliveryTypes,
+    ...commercialTypes,
+    ...businessTypes,
+  ];
+
+  const tabs: { id: VehicleTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "overview", label: "Overview", icon: BarChart3 },
+    { id: "all", label: "All Vehicles", icon: Car },
+    { id: "types", label: "Vehicle Types", icon: Truck },
+    { id: "documents", label: "Documents", icon: FileText },
+    { id: "inspections", label: "Inspections", icon: Shield },
+    { id: "assignment", label: "Assignments", icon: UserPlus },
+    { id: "fleet", label: "Fleet", icon: Car },
+    { id: "maintenance", label: "Maintenance", icon: Wrench },
+  ];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getDriverName = (v: Vehicle) => (v.driver as any)?.user?.full_name || null;
 
   return (
-    <div className="space-y-8 bg-gradient-to-br from-slate-50 via-white to-green-50/40 min-h-screen p-1">
-      {/* ── HEADER ── */}
-      <div className="flex items-center justify-between min-h-[96px] rounded-3xl border bg-white/90 backdrop-blur px-6 shadow-sm">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[34px] font-black tracking-tight text-slate-900 leading-tight">Vehicles</h1>
-          <p className="text-base text-gray-400 font-normal mt-1">Manage fleet, inspections and approvals</p>
+          <h1 className="text-2xl font-bold text-gray-900">Vehicles</h1>
+          <p className="text-gray-500 mt-1">Complete vehicle fleet management</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleSuspendUnsafeVehicles} className="flex items-center gap-2.5 h-12 px-5 bg-orange-600 text-white rounded-2xl text-sm font-semibold hover:bg-orange-700 shadow-sm transition-all">
-            <Ban className="h-5 w-5" /> Suspend Unsafe
-          </button>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2.5 h-12 px-6 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 shadow-sm shadow-green-200 transition-all">
-            <Plus className="h-5 w-5" /> Add Vehicle
-          </button>
-        </div>
+        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+          <Plus className="h-4 w-4" /> Add Vehicle
+        </button>
       </div>
 
-      {/* ── METRIC CARDS (2 rows × 5) ── */}
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <MCard icon={Car} label="Total Vehicles" sub="All registered vehicles" value={total} color="text-blue-600" bg="bg-blue-50" />
-          <MCard icon={CheckCircle} label="Active Vehicles" sub="Available for trips" value={active} color="text-green-600" bg="bg-green-50" />
-          <MCard icon={Clock} label="Pending Approval" sub="Awaiting review" value={pending} color="text-amber-600" bg="bg-amber-50" />
-          <MCard icon={AlertTriangle} label="Expiring Docs" sub="Within 30 days" value={expiring} color="text-red-600" bg="bg-red-50" />
-          <MCard icon={XCircle} label="Rejected" sub="Failed inspection/docs" value={rejected} color="text-red-600" bg="bg-red-50" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <MCard icon={UserPlus} label="Assigned" sub="Has driver" value={assigned} color="text-purple-600" bg="bg-purple-50" />
-          <MCard icon={UserMinus} label="Unassigned" sub="No driver" value={unassigned} color="text-gray-600" bg="bg-gray-50" />
-          <MCard icon={Truck} label="Fleet Owned" sub="Company vehicles" value={fleetOwned} color="text-indigo-600" bg="bg-indigo-50" />
-          <MCard icon={Ban} label="Suspended" sub="Inactive" value={suspended} color="text-orange-600" bg="bg-orange-50" />
-          <MCard icon={Shield} label="Inspection Due" sub="Needs check" value={inspectionDue} color="text-cyan-600" bg="bg-cyan-50" />
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id ? "border-green-600 text-green-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
+              <Icon className="h-4 w-4" /> {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── FILTER BAR ── */}
-      <div className="bg-white/90 rounded-3xl border border-gray-200 p-5 shadow-sm flex flex-wrap items-center gap-3 min-h-[80px]">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input type="text" placeholder="Search vehicle, driver, plate..." value={search} onChange={e => setSearch(e.target.value)} className="w-full h-12 pl-10 pr-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white" />
-        </div>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[130px]"><option value="all">All Types</option><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="boda">WeAfrica Boda</option></select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[120px]"><option value="all">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
-        <select value={docFilter} onChange={e => setDocFilter(e.target.value)} className="h-12 px-4 border border-gray-200 rounded-xl text-sm bg-white min-w-[140px]"><option value="all">All Documents</option><option value="verified">Verified</option><option value="expiring">Expiring</option></select>
-        <button onClick={() => { setSearch(""); setTypeFilter("all"); setStatusFilter("all"); setDocFilter("all"); }} className="h-12 px-5 text-sm font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Reset</button>
-      </div>
+      {/* ===== OVERVIEW ===== */}
+      {activeTab === "overview" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+            <StatBox icon={Car} label="Total Vehicles" value={totalVehicles} color="text-blue-600" bg="bg-blue-50" />
+            <StatBox icon={CheckCircle} label="Active" value={activeCount} color="text-green-600" bg="bg-green-50" />
+            <StatBox icon={Clock} label="Pending" value={pendingCount} color="text-amber-600" bg="bg-amber-50" />
+            <StatBox icon={AlertTriangle} label="Expired Docs" value={expiredDocs} color="text-red-600" bg="bg-red-50" />
+            <StatBox icon={Navigation} label="Online Now" value={onlineCount} color="text-cyan-600" bg="bg-cyan-50" />
+            <StatBox icon={MapPin} label="On Trip" value={onTripCount} color="text-emerald-600" bg="bg-emerald-50" />
+            <StatBox icon={Truck} label="Fleet" value={fleetCount} color="text-purple-600" bg="bg-purple-50" />
+            <StatBox icon={Ban} label="Inactive" value={totalVehicles - activeCount} color="text-gray-600" bg="bg-gray-50" />
+          </div>
 
-      {/* ── VEHICLE CARDS GRID ── */}
-      {loading ? (
-        <div className="flex items-center justify-center py-24"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div></div>
-      ) : filteredVehicles.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-200 py-24 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-2xl mb-5"><Car className="h-9 w-9 text-gray-400" /></div>
-          <p className="text-lg font-semibold text-gray-900">No Vehicles Found</p>
-          <p className="text-sm text-gray-400 mt-1.5 max-w-xs mx-auto">Add vehicles to begin onboarding drivers</p>
-          <button onClick={() => setShowAddModal(true)} className="mt-5 inline-flex items-center gap-2 h-11 px-5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700"><Plus className="h-4 w-4" /> Add Vehicle</button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filteredVehicles.map(v => {
-            const vt = v.vehicle_type || "";
-            const Icon = VEHICLE_TYPE_ICONS[vt] || Car;
-            const typeLabel = VEHICLE_TYPE_LABELS[vt] || vt;
-            const driverName = getDriverName(v);
-            const insOk = Boolean(((v as any).insurance_document_url || (v as any).insurance_doc_url) && (!v.insurance_expiry || !isInsuranceExpired(v.insurance_expiry)));
-            const inspOk = v.inspection_status === "passed";
-            const insExp = isInsuranceExpiringSoon(v.insurance_expiry);
-            const readiness = getVehicleReadiness(v);
-            return (
-              <div key={v.id} className="bg-white rounded-[20px] border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
-                {/* Top: icon + info + badges */}
-                <div className="flex items-start gap-4">
-                  <div className="w-[72px] h-[72px] bg-green-50 rounded-2xl flex items-center justify-center flex-shrink-0"><Icon className="h-8 w-8 text-green-600" /></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-semibold text-gray-900 leading-tight truncate">{v.make} {v.model}</p>
-                    <p className="text-sm text-gray-400 font-mono mt-0.5">{v.plate_number}</p>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                      <span className="inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{typeLabel}</span>
-                      <span className={`inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium ${v.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${v.is_active ? "bg-green-500" : "bg-red-500"}`} />{v.is_active ? "Active" : "Inactive"}
-                      </span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold mb-3">Vehicle Type Distribution</h3>
+              <div className="space-y-3">
+                {vehicleTypeCounts.map(vt => (
+                  <div key={vt.id}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-500">{vt.name}</span>
+                      <span className="text-gray-700 font-medium">{vt.count}</span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full" style={{ width: `${totalVehicles > 0 ? (vt.count / totalVehicles) * 100 : 0}%` }} />
                     </div>
                   </div>
-                </div>
-
-                {/* Driver + City */}
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span title={readiness.message} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${readiness.className}`}>
-                      {readiness.label}
-                    </span>
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${selectedVehicle?.id === v.id ? "bg-blue-100 text-blue-700" : v.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-                      {v.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm"><span className="text-gray-400">Driver</span><span className="text-gray-900 font-medium">{driverName || <span className="text-gray-400 italic">Unassigned</span>}</span></div>
-                  <div className="flex items-center gap-1.5 text-sm"><span className="text-gray-400">City</span><span className="text-gray-500 font-medium">{(v as any).city || "—"}</span></div>
-                </div>
-
-                {/* Checklist */}
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <CRow ok={Boolean(insOk)} warn={Boolean(insExp)} okText="✓ Verified" warnText="Pending / Missing" failText="Pending" label="Documents" />
-                  <CRow ok={Boolean(inspOk)} warn={v.inspection_status !== "rejected"} okText="✓ Passed" warnText={v.inspection_status || "Pending"} failText="Failed" label="Inspection" />
-                  <CRow ok={Boolean(v.driver_id)} okText="✓ Assigned" warnText="Unassigned" failText="Unassigned" label="Assignment" />
-                  <CRow ok={true} okText="Connected" warnText="—" failText="—" label="Pricing" warn={false} />
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 pt-2">
-                  <button onClick={async () => { setSelectedVehicle(v); fetchMaintenanceRecords(v.id); setShowDrawer(true); setDrawerTab("overview"); await loadPricing(v); }} className="flex-1 flex items-center justify-center gap-2 h-[44px] bg-gray-900 text-white rounded-xl text-xs font-semibold hover:bg-gray-800"><Eye className="h-4 w-4" /> View</button>
-                  {v.driver_id
-                    ? <button onClick={() => handleUnassignDriver(v.id)} className="flex items-center justify-center gap-1 h-[44px] px-4 rounded-xl text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100"><UserMinus className="h-4 w-4" /> Unassign</button>
-                    : <button onClick={() => { setSelectedVehicle(v); fetchMaintenanceRecords(v.id); setShowAssignModal(true); }} className="flex items-center justify-center gap-1 h-[44px] px-4 rounded-xl text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100"><UserPlus className="h-4 w-4" /> Assign</button>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ═════════════ VEHICLE DRAWER ═════════════ */}
-      {showDrawer && selectedVehicle && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDrawer(false)} />
-          <div className="relative ml-auto bg-white w-full max-w-[520px] h-full shadow-2xl overflow-y-auto">
-            <div className="sticky top-0 bg-white z-10 border-b border-gray-200">
-              <div className="flex items-start justify-between px-6 py-5 gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-[100px] h-[100px] bg-blue-600 rounded-[20px] flex items-center justify-center text-white flex-shrink-0">
-                    {React.createElement(VEHICLE_TYPE_ICONS[selectedVehicle.vehicle_type || ""] || Car, { className: "h-12 w-12" })}
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="text-lg font-bold text-gray-900">{selectedVehicle.make} {selectedVehicle.model}</h2>
-                    <p className="text-sm text-gray-400 font-mono mt-0.5">{selectedVehicle.plate_number}</p>
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      <span className={`inline-flex items-center gap-1 h-[28px] px-2.5 rounded-full text-xs font-medium ${selectedVehicle.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{selectedVehicle.is_active ? "Active" : "Inactive"}</span>
-                      <span className="inline-flex items-center h-[28px] px-2.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""]}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {selectedVehicle.is_active ? <button onClick={() => handleSuspend(selectedVehicle.id)} className="h-8 px-3 bg-red-600 text-white rounded-lg text-xs font-medium flex items-center gap-1"><Ban className="h-3.5 w-3.5" /> Suspend</button> : <button onClick={() => handleReactivate(selectedVehicle.id)} className="h-8 px-3 bg-green-600 text-white rounded-lg text-xs font-medium">Reactivate</button>}
-                  <button onClick={() => handleDelete(selectedVehicle.id)} className="h-8 px-3 bg-gray-200 text-gray-700 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button>
-                  <button onClick={() => setShowDrawer(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
-                </div>
-              </div>
-              <div className="flex border-t border-gray-100 px-6 overflow-x-auto">
-                {(["overview", "documents", "inspection", "pricing", "maintenance", "history"] as const).map(t => (
-                  <button key={t} onClick={() => setDrawerTab(t)} className={`h-12 px-4 text-sm font-medium border-b-2 whitespace-nowrap capitalize transition-colors ${drawerTab === t ? "border-green-600 text-green-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>{t}</button>
                 ))}
               </div>
             </div>
-
-            <div className="p-6">
-              {drawerTab === "overview" && (
-                <div className="space-y-6">
-                  <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Vehicle Information</h3>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                      <Detail label="Vehicle Type" value={VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""] || "—"} />
-                      <Detail label="Plate Number" value={selectedVehicle.plate_number} />
-                      <Detail label="Make" value={selectedVehicle.make || "—"} />
-                      <Detail label="Model" value={selectedVehicle.model || "—"} />
-                      <Detail label="Year" value={selectedVehicle.year?.toString() || "—"} />
-                      <Detail label="Color" value={selectedVehicle.color || "—"} />
-                      <Detail label="Seats" value={selectedVehicle.seats?.toString() || "—"} />
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Assignment Information</h3>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                      <Detail label="Driver" value={getDriverName(selectedVehicle) || "Unassigned"} />
-                      <Detail label="Status" value={selectedVehicle.is_active ? "Active" : "Inactive"} />
-                      <Detail label="Readiness" value={getVehicleReadiness(selectedVehicle).label} />
-                      <Detail label="Readiness Notes" value={getVehicleReadiness(selectedVehicle).message} />
-                      <Detail label="Created" value={selectedVehicle.created_at ? new Date(selectedVehicle.created_at).toLocaleDateString("en-GB") : "—"} />
-                    </div>
-                    <div className="flex flex-wrap gap-2 pt-1">
-
-                      {!getVehicleReadiness(selectedVehicle).canActivate &&
-                        selectedVehicle.is_active && (
-                        <button
-                          onClick={() => handleSuspend(selectedVehicle.id)}
-                          className="flex items-center gap-2 h-10 px-4 bg-orange-600 text-white rounded-xl text-sm font-medium"
-                        >
-                          <Ban className="h-4 w-4" />
-                          Suspend Unsafe Vehicle
-                        </button>
-                      )}
-
-                      {selectedVehicle.driver_id
-                        ? (
-                        <button onClick={() => handleUnassignDriver(selectedVehicle.id)} className="flex items-center gap-2 h-10 px-4 bg-red-600 text-white rounded-xl text-sm font-medium">
-                          <UserMinus className="h-4 w-4" />
-                          Unassign Driver
-                        </button>
-                      )
-                        : (
-                        <button onClick={() => setShowAssignModal(true)} className="flex items-center gap-2 h-10 px-4 bg-green-600 text-white rounded-xl text-sm font-medium">
-                          <UserPlus className="h-4 w-4" />
-                          Assign Driver
-                        </button>
-                      )}
-
-                    </div>
-                  </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold mb-3">Quick Actions</h3>
+              <div className="space-y-2">
+                <button onClick={() => setActiveTab("all")} className="w-full flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg text-sm text-blue-700"><Car className="h-4 w-4" />View all {totalVehicles} vehicles</button>
+                <button onClick={() => setActiveTab("assignment")} className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 rounded-lg text-sm text-purple-700"><UserPlus className="h-4 w-4" />Assign drivers</button>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold mb-3">Compliance Status</h3>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-xs mb-1"><span className="text-gray-500">Insured</span><span className="text-gray-700">{vehicles.filter(v => v.insurance_expiry && !isInsuranceExpired(v.insurance_expiry)).length}/{totalVehicles}</span></div>
+                  <div className="h-2 bg-gray-100 rounded-full"><div className="h-full bg-green-500 rounded-full" style={{ width: `${totalVehicles > 0 ? (vehicles.filter(v => v.insurance_expiry && !isInsuranceExpired(v.insurance_expiry)).length / totalVehicles) * 100 : 0}%` }} /></div>
                 </div>
-              )}
-
-              {drawerTab === "documents" && (
-                <div className="space-y-3">
-                  {getDocuments(selectedVehicle).map((doc, i) => {
-                    const cfg = { verified: { color: "bg-green-100 text-green-700", icon: CheckCircle, label: "Verified" }, pending: { color: "bg-amber-100 text-amber-700", icon: Clock, label: "Pending" }, expired: { color: "bg-red-100 text-red-700", icon: AlertTriangle, label: "Expired" }, rejected: { color: "bg-red-100 text-red-700", icon: XCircle, label: "Rejected" } }[doc.status];
-                    return (
-                      <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 min-h-[100px]">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-3"><div className="p-2 bg-green-50 rounded-lg"><FileText className="h-5 w-5 text-green-600" /></div>
-                            <div><p className="text-sm font-medium text-gray-900">{doc.label}</p>
-                              <div className="text-xs text-gray-400 space-y-0.5 mt-1">{doc.uploaded_at && <p>Uploaded: {formatDate(doc.uploaded_at)}</p>}{doc.expiry_date && <p>Expiry: {formatDate(doc.expiry_date)}</p>}{doc.reviewed_by && <p>Reviewed by: {doc.reviewed_by}</p>}{!doc.url && !doc.uploaded_at && <p>Not uploaded</p>}</div></div></div>
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${cfg.color}`}><cfg.icon className="h-3 w-3" /> {cfg.label}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-                          {doc.url ? <button className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-50 rounded">View</button> : <button className="text-xs text-green-600 hover:text-green-800 px-2 py-1 hover:bg-green-50 rounded flex items-center gap-1"><Upload className="h-3 w-3" /> Upload</button>}
-                          {doc.status === "pending" && <button onClick={() => setDocAction({ doc, action: "approve" })} className="text-xs text-green-600 px-2 py-1 hover:bg-green-50 rounded"><CheckCircle className="h-3 w-3 inline" /> Approve</button>}
-                          {doc.status !== "rejected" && <button onClick={() => setDocAction({ doc, action: "reject" })} className="text-xs text-red-600 px-2 py-1 hover:bg-red-50 rounded"><XCircle className="h-3 w-3 inline" /> Reject</button>}
-                          {doc.status === "expired" && <button onClick={() => setDocAction({ doc, action: "reupload" })} className="text-xs text-orange-600 px-2 py-1 hover:bg-orange-50 rounded"><Upload className="h-3 w-3 inline" /> Request Re-upload</button>}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div>
+                  <div className="flex justify-between text-xs mb-1"><span className="text-gray-500">Inspected</span><span className="text-gray-700">{vehicles.filter(v => v.inspection_status === "passed").length}/{totalVehicles}</span></div>
+                  <div className="h-2 bg-gray-100 rounded-full"><div className="h-full bg-green-500 rounded-full" style={{ width: `${totalVehicles > 0 ? (vehicles.filter(v => v.inspection_status === "passed").length / totalVehicles) * 100 : 0}%` }} /></div>
                 </div>
-              )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {drawerTab === "inspection" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4"><Detail label="Last Inspection" value={selectedVehicle.inspection_date ? formatDate(selectedVehicle.inspection_date) : "N/A"} /><Detail label="Status" value={selectedVehicle.inspection_status || "N/A"} /></div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => supabase.from("vehicles").update({ inspection_status: "passed", inspection_date: new Date().toISOString() }).eq("id", selectedVehicle.id).then(() => { fetchVehicles(); setSelectedVehicle(prev => prev ? { ...prev, inspection_status: "passed" } : null); })} className="flex items-center gap-2 h-10 px-4 bg-green-600 text-white rounded-xl text-sm font-medium"><CheckCircle className="h-4 w-4" /> Pass Inspection</button>
-                    <button onClick={() => supabase.from("vehicles").update({ inspection_status: "rejected", inspection_date: new Date().toISOString() }).eq("id", selectedVehicle.id).then(() => { fetchVehicles(); setSelectedVehicle(prev => prev ? { ...prev, inspection_status: "rejected" } : null); })} className="flex items-center gap-2 h-10 px-4 bg-red-600 text-white rounded-xl text-sm font-medium"><XCircle className="h-4 w-4" /> Fail Inspection</button>
-                    <button className="flex items-center gap-2 h-10 px-4 bg-blue-600 text-white rounded-xl text-sm font-medium"><Calendar className="h-4 w-4" /> Schedule Inspection</button>
-                  </div>
+      {/* ===== ALL VEHICLES ===== */}
+      {activeTab === "all" && (
+        <>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-wrap gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input type="text" placeholder="Search plate, make, model, driver..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
-              )}
+              </div>
+              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">
+                <option value="all">All Types</option>
+                <option value="economy">WeAfrica X</option>
+                <option value="comfort">WeAfrica Comfort</option>
+                <option value="xl">WeAfrica XL</option>
+                <option value="luxury">WeAfrica Black</option>
+                <option value="boda">WeAfrica Boda</option>
+              </select>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">
+                <option value="all">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
 
-              {drawerTab === "pricing" && (
-                <div className="space-y-4">
-                  {pricingCache[selectedVehicle.id] ? (
-                    <>
-                      <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3"><CheckCircle className="h-5 w-5 text-green-600" /><div><p className="text-sm font-medium text-green-800">Pricing Connected</p><p className="text-xs text-green-600">{VEHICLE_TYPE_LABELS[selectedVehicle.vehicle_type || ""]}</p></div></div>
-                      <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-                        {[["Base Fare", `${formatCurrency(pricingCache[selectedVehicle.id]!.base_fare)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Per KM", `${formatCurrency(pricingCache[selectedVehicle.id]!.per_km)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Per Minute", `${formatCurrency(pricingCache[selectedVehicle.id]!.per_min)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Booking Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.booking_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Waiting Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.waiting_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Cancellation Fee", `${formatCurrency(pricingCache[selectedVehicle.id]!.cancellation_fee)} ${pricingCache[selectedVehicle.id]!.currency}`], ["Surge", `${pricingCache[selectedVehicle.id]!.surge_multiplier}x`], ["Commission", `${pricingCache[selectedVehicle.id]!.commission_percent}%`]]
-                          .map(([k, v], i) => <div key={i} className="flex justify-between text-sm"><span className="text-gray-500">{k}</span><span className={`font-medium text-gray-900 ${k === "Commission" ? "font-bold" : ""}`}>{v}</span></div>)
-                        }
-                      </div>
-                      <a href="/admin/finance/pricing" className="flex items-center justify-between h-12 px-5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700"><span>Change Pricing Rule</span><ArrowUpRight className="h-4 w-4" /></a>
-                    </>
-                  ) : (
-                    <div className="bg-white rounded-xl border border-gray-200 p-12 text-center"><DollarSign className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">Loading pricing...</p></div>
-                  )}
-                </div>
-              )}
-
-              {drawerTab === "maintenance" && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-gray-900">Maintenance Records</p>
-                      <p className="text-sm text-gray-400">Service history and maintenance logs</p>
-                    </div>
-                    <button onClick={() => setShowMaintenanceModal(true)} className="flex items-center gap-2 h-10 px-4 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
-                      <Plus className="h-4 w-4" /> Add
-                    </button>
-                  </div>
-
-                  {maintenanceRecords.length === 0 ? (
-                    <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-                      <Wrench className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">No maintenance records yet</p>
-                      <p className="text-sm text-gray-400 mt-1">Add services, repairs, mileage and costs.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {maintenanceRecords.map((m) => (
-                        <div key={m.id} className="rounded-2xl border bg-white p-4">
-                          <div className="flex items-start justify-between">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-3 font-medium">Vehicle</th>
+                      <th className="px-4 py-3 font-medium">Type</th>
+                      <th className="px-4 py-3 font-medium">Driver</th>
+                      <th className="px-4 py-3 font-medium">Insurance</th>
+                      <th className="px-4 py-3 font-medium">Inspection</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredVehicles.map((v) => {
+                      const driverName = getDriverName(v);
+                      return (
+                        <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-4 py-3">
                             <div>
-                              <p className="font-semibold text-gray-900">{m.title}</p>
-                              <p className="text-xs text-gray-400">{m.service_date ? formatDate(m.service_date) : "No date"}</p>
+                              <p className="font-medium text-gray-900">{v.plate_number}</p>
+                              <p className="text-xs text-gray-400">{v.make} {v.model} ({v.year}) — {v.color}</p>
                             </div>
-                            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                              MK {Number(m.cost || 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3"><span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 capitalize">{v.vehicle_type}</span></td>
+                          <td className="px-4 py-3 text-xs text-gray-500">{driverName || "Unassigned"}</td>
+                          <td className="px-4 py-3">
+                            {v.insurance_expiry ? (
+                              <span className={`inline-flex items-center gap-1 text-xs ${isInsuranceExpired(v.insurance_expiry) ? "text-red-600" : "text-green-600"}`}>
+                                {isInsuranceExpired(v.insurance_expiry) && <AlertTriangle className="h-3 w-3" />}
+                                {formatDate(v.insurance_expiry)}
+                              </span>
+                            ) : <span className="text-gray-400 text-xs">N/A</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${v.inspection_status === "passed" ? "bg-green-100 text-green-800" : v.inspection_status === "pending" ? "bg-yellow-100 text-yellow-800" : v.inspection_status === "expired" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"}`}>
+                              {v.inspection_status || "N/A"}
                             </span>
-                          </div>
-                          {m.description && <p className="mt-2 text-sm text-gray-500">{m.description}</p>}
-                          <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                            <Detail label="Mileage" value={m.mileage ? `${m.mileage} km` : "N/A"} />
-                            <Detail label="Next Service" value={m.next_service_date ? formatDate(m.next_service_date) : "N/A"} />
-                          </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${v.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                              {v.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => { setSelectedVehicle(v); setShowDetailModal(true); setDetailTab("info"); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="View"><Eye className="h-4 w-4" /></button>
+                              {v.driver_id ? <button onClick={() => handleUnassignDriver(v.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-600" title="Unassign"><UserMinus className="h-4 w-4" /></button> : <button onClick={() => { setSelectedVehicle(v); setShowAssignModal(true); }} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Assign"><UserPlus className="h-4 w-4" /></button>}
+                              {v.is_active ? <button onClick={() => handleSuspend(v.id)} className="p-1.5 hover:bg-orange-50 rounded-lg text-orange-600" title="Suspend"><Ban className="h-4 w-4" /></button> : <button onClick={() => handleApprove(v.id)} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Activate"><CheckCircle className="h-4 w-4" /></button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredVehicles.length === 0 && <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">No vehicles found</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ===== VEHICLE TYPES ===== */}
+      {activeTab === "types" && (
+        <div className="space-y-6">
+          {/* Consumer Ride Services */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-700">Consumer Ride Services</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Seats</th>
+                    <th className="px-6 py-3 font-medium">Vehicles</th>
+                    <th className="px-6 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {consumerTypes.map(vt => (
+                    <tr key={vt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-50 rounded-lg"><Car className="h-5 w-5 text-green-600" /></div>
+                          <div><p className="font-medium text-gray-900">{vt.name}</p><p className="text-xs text-gray-400">{vt.slug}</p></div>
                         </div>
-                      ))}
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium">{vt.seats}</td>
+                      <td className="px-6 py-4 font-medium text-center">{vt.count}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${vt.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
+                          {vt.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Bike / Delivery Services */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-700">Bike / Delivery Services</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Seats</th>
+                    <th className="px-6 py-3 font-medium">Vehicles</th>
+                    <th className="px-6 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deliveryTypes.map(vt => (
+                    <tr key={vt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-50 rounded-lg">{vt.slug === "delivery_van" ? <Truck className="h-5 w-5 text-green-600" /> : <Bike className="h-5 w-5 text-green-600" />}</div>
+                          <div><p className="font-medium text-gray-900">{vt.name}</p><p className="text-xs text-gray-400">{vt.slug}</p></div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium">{vt.seats}</td>
+                      <td className="px-6 py-4 font-medium text-center">{vt.count}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${vt.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
+                          {vt.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Commercial / Shared */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-700">Commercial / Shared</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Seats</th>
+                    <th className="px-6 py-3 font-medium">Vehicles</th>
+                    <th className="px-6 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commercialTypes.map(vt => (
+                    <tr key={vt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-50 rounded-lg"><Truck className="h-5 w-5 text-green-600" /></div>
+                          <div><p className="font-medium text-gray-900">{vt.name}</p><p className="text-xs text-gray-400">{vt.slug}</p></div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium">{vt.seats}</td>
+                      <td className="px-6 py-4 font-medium text-center">{vt.count}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${vt.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
+                          {vt.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Business */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-700">Business</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Seats</th>
+                    <th className="px-6 py-3 font-medium">Vehicles</th>
+                    <th className="px-6 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {businessTypes.map(vt => (
+                    <tr key={vt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-50 rounded-lg"><Car className="h-5 w-5 text-green-600" /></div>
+                          <div><p className="font-medium text-gray-900">{vt.name}</p><p className="text-xs text-gray-400">{vt.slug}</p></div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium">{vt.seats}</td>
+                      <td className="px-6 py-4 font-medium text-center">{vt.count}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${vt.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
+                          {vt.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== DOCUMENTS ===== */}
+      {activeTab === "documents" && (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+          <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">Document Verification</p>
+          <p className="text-sm text-gray-400 mt-1">Upload and verify vehicle documents — coming soon</p>
+        </div>
+      )}
+
+      {/* ===== INSPECTIONS ===== */}
+      {activeTab === "inspections" && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-medium">Vehicle</th>
+                  <th className="px-4 py-3 font-medium">Last Inspection</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicles.length === 0 ? (
+                  <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400">No vehicles found</td></tr>
+                ) : vehicles.slice(0, 20).map(v => (
+                  <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-xs">{v.plate_number} — {v.make} {v.model}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{v.inspection_date ? formatDate(v.inspection_date) : "N/A"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${v.inspection_status === "passed" ? "bg-green-100 text-green-800" : v.inspection_status === "pending" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>
+                        {v.inspection_status || "N/A"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right"><button className="px-2 py-1 text-xs bg-green-600 text-white rounded">Schedule</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ASSIGNMENTS ===== */}
+      {activeTab === "assignment" && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-medium">Vehicle</th>
+                  <th className="px-4 py-3 font-medium">Assigned Driver</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicles.map(v => {
+                  const driverName = getDriverName(v);
+                  return (
+                    <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-xs">{v.plate_number} — {v.make} {v.model}</td>
+                      <td className="px-4 py-3 text-xs">{driverName || <span className="text-gray-400 italic">Unassigned</span>}</td>
+                      <td className="px-4 py-3"><span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${driverName ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>{driverName ? "Active" : "Open"}</span></td>
+                      <td className="px-4 py-3 text-right">
+                        {driverName ? <button onClick={() => handleUnassignDriver(v.id)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Remove</button> :
+                          <button onClick={() => { setSelectedVehicle(v); setShowAssignModal(true); }} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">Assign</button>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== FLEET ===== */}
+      {activeTab === "fleet" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-400">Fleet Vehicles</p><p className="text-xl font-bold text-purple-600">{fleetCount}</p></div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-400">Assigned Drivers</p><p className="text-xl font-bold text-blue-600">{fleetCount}</p></div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-400">Active Fleet Drivers</p><p className="text-xl font-bold text-green-600">{onlineCount}</p></div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+            <Truck className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">Fleet Management</p>
+            <p className="text-sm text-gray-400 mt-1">Vehicle revenue and performance tracking — coming soon</p>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MAINTENANCE ===== */}
+      {activeTab === "maintenance" && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-medium">Vehicle</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicles.length === 0 ? (
+                  <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400">No vehicles to display</td></tr>
+                ) : vehicles.slice(0, 20).map(v => (
+                  <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-xs">{v.plate_number} — {v.make} {v.model}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{v.is_active ? "Active" : "Inactive"}</td>
+                    <td className="px-4 py-3 text-right"><button className="px-2 py-1 text-xs bg-blue-600 text-white rounded">Log Service</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== VEHICLE DETAIL MODAL ===== */}
+      {showDetailModal && selectedVehicle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center text-white"><Car className="h-6 w-6" /></div>
+                <div>
+                  <h2 className="text-lg font-semibold">{selectedVehicle.plate_number}</h2>
+                  <p className="text-xs text-gray-500">{selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.year}) — {selectedVehicle.color}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedVehicle.driver_id ? <button onClick={() => handleUnassignDriver(selectedVehicle.id)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium">Unassign Driver</button> : <button onClick={() => { setShowAssignModal(true); }} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">Assign Driver</button>}
+                <button onClick={() => setShowDetailModal(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+              </div>
+            </div>
+
+            <div className="flex border-b border-gray-200 px-6">
+              {(["info", "documents", "inspections", "trips"] as const).map(tab => (
+                <button key={tab} onClick={() => setDetailTab(tab)} className={`px-4 py-3 text-sm font-medium border-b-2 capitalize ${detailTab === tab ? "border-green-600 text-green-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+                  {tab === "info" ? "Basic Info" : tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {detailTab === "info" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-xs font-semibold mb-2">Vehicle Info</h4>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Plate</span><span className="font-medium">{selectedVehicle.plate_number}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Type</span><span className="font-medium capitalize">{selectedVehicle.vehicle_type}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Make</span><span className="font-medium">{selectedVehicle.make}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Model</span><span className="font-medium">{selectedVehicle.model}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Year</span><span className="font-medium">{selectedVehicle.year}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Color</span><span className="font-medium">{selectedVehicle.color}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Seats</span><span className="font-medium">{selectedVehicle.seats}</span></div>
+                      <div className="flex justify-between items-center text-xs pt-1">
+                        <span className="text-gray-500">Vehicle Class</span>
+                        <select
+                          value={selectedVehicle.vehicle_class_id || ""}
+                          onChange={(e) => handleAssignClass(selectedVehicle.id, e.target.value)}
+                          className="px-2 py-1 border rounded-md text-xs font-medium"
+                        >
+                          <option value="">Unassigned (default)</option>
+                          {vehicleClasses.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-xs font-semibold mb-2">Status & Compliance</h4>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Active</span><span className={`font-medium ${selectedVehicle.is_active ? "text-green-600" : "text-red-600"}`}>{selectedVehicle.is_active ? "Yes" : "No"}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Insurance</span><span className={`font-medium ${selectedVehicle.insurance_expiry && isInsuranceExpired(selectedVehicle.insurance_expiry) ? "text-red-600" : "text-green-600"}`}>{selectedVehicle.insurance_expiry ? formatDate(selectedVehicle.insurance_expiry) : "N/A"}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Inspection</span><span className="font-medium capitalize">{selectedVehicle.inspection_status || "N/A"}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Driver</span><span className="font-medium">{getDriverName(selectedVehicle) || "Unassigned"}</span></div>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {drawerTab === "history" && (
-                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center"><History className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">Trip & Activity History</p><p className="text-sm text-gray-400 mt-1">Trip records and admin actions for this vehicle</p></div>
+              {detailTab === "documents" && (
+                <div className="text-center py-8 text-gray-400">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">Document Verification</p>
+                  <p className="text-sm">Upload and verify vehicle documents — coming soon</p>
+                </div>
+              )}
+
+              {detailTab === "inspections" && (
+                <div className="text-center py-8 text-gray-400">
+                  <Shield className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">Inspection History</p>
+                  <p className="text-sm">Last inspection: {selectedVehicle.inspection_date ? formatDate(selectedVehicle.inspection_date) : "N/A"}</p>
+                  <p className="text-sm">Status: {selectedVehicle.inspection_status || "N/A"}</p>
+                </div>
+              )}
+
+              {detailTab === "trips" && (
+                <div className="text-center py-8 text-gray-400">
+                  <MapPin className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">Trip History</p>
+                  <p className="text-sm">Trip records for this vehicle will appear here</p>
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══ Document Action Dialog ═══ */}
-      {docAction && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl w-full max-w-sm mx-4 p-6 space-y-4">
-            <h3 className="text-lg font-semibold capitalize">{docAction.action} Document</h3>
-            <p className="text-sm text-gray-500">Confirm {docAction.action} of <strong>{docAction.doc.label}</strong></p>
-            <div className="flex gap-2"><button onClick={() => setDocAction(null)} className="flex-1 h-11 border rounded-xl text-sm">Cancel</button><button onClick={handleDocAction} className={`flex-1 h-11 text-white rounded-xl text-sm ${docAction.action === "reject" || docAction.action === "reupload" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}>Confirm</button></div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ Maintenance Modal ═══ */}
-      {showMaintenanceModal && selectedVehicle && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5">
-            <h2 className="text-lg font-bold text-gray-900">Add Maintenance Record</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1.5">Title</label>
-                <input value={maintenanceForm.title} onChange={e => setMaintenanceForm(p => ({ ...p, title: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5">Cost</label>
-                <input type="number" value={maintenanceForm.cost} onChange={e => setMaintenanceForm(p => ({ ...p, cost: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5">Mileage</label>
-                <input type="number" value={maintenanceForm.mileage} onChange={e => setMaintenanceForm(p => ({ ...p, mileage: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5">Service Date</label>
-                <input type="date" value={maintenanceForm.service_date} onChange={e => setMaintenanceForm(p => ({ ...p, service_date: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5">Next Service</label>
-                <input type="date" value={maintenanceForm.next_service_date} onChange={e => setMaintenanceForm(p => ({ ...p, next_service_date: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1.5">Description</label>
-                <textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm(p => ({ ...p, description: e.target.value }))} className="w-full min-h-24 px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-              </div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowMaintenanceModal(false)} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleAddMaintenance} className="flex-1 h-11 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">Save Record</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ Add Vehicle Modal ═══ */}
+      {/* Add Vehicle Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5 max-h-[85vh] overflow-y-auto">
-            <h2 className="text-lg font-bold text-gray-900">Add New Vehicle</h2>
+          <div className="bg-white rounded-xl w-full max-w-lg mx-4 p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold">Add New Vehicle</h2>
             <div className="grid grid-cols-2 gap-4">
-              {[{ l: "Plate Number", v: newVehicle.plate_number, k: "plate_number" }, { l: "Type", v: newVehicle.vehicle_type, k: "vehicle_type", s: true }, { l: "Make", v: newVehicle.make, k: "make" }, { l: "Model", v: newVehicle.model, k: "model" }, { l: "Year", v: newVehicle.year.toString(), k: "year", n: true }, { l: "Color", v: newVehicle.color, k: "color" }, { l: "Seats", v: newVehicle.seats.toString(), k: "seats", n: true }]
-                .map(({ l, k, s, n }) => (
-                  <div key={k}>
-                    <label className="block text-xs text-gray-500 mb-1.5">{l}</label>
-                    {s ? <select value={newVehicle[k as keyof typeof newVehicle] as string} onChange={e => setNewVehicle(p => ({ ...p, [k]: e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm bg-white"><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="boda">WeAfrica Boda</option></select>
-                      : <input type={n ? "number" : "text"} value={newVehicle[k as keyof typeof newVehicle] as string} onChange={e => setNewVehicle(p => ({ ...p, [k]: n ? parseInt(e.target.value) || 0 : e.target.value }))} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />}
-                  </div>
-                ))}
+              <div><label className="block text-xs text-gray-500 mb-1">Plate Number</label><input type="text" value={newVehicle.plate_number} onChange={(e) => setNewVehicle(p => ({ ...p, plate_number: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Type</label><select value={newVehicle.vehicle_type} onChange={(e) => setNewVehicle(p => ({ ...p, vehicle_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="taxi">WeAfrica Taxi</option><option value="boda">WeAfrica Boda</option></select></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Make</label><input type="text" value={newVehicle.make} onChange={(e) => setNewVehicle(p => ({ ...p, make: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Model</label><input type="text" value={newVehicle.model} onChange={(e) => setNewVehicle(p => ({ ...p, model: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Year</label><input type="number" value={newVehicle.year} onChange={(e) => setNewVehicle(p => ({ ...p, year: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Color</label><input type="text" value={newVehicle.color} onChange={(e) => setNewVehicle(p => ({ ...p, color: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Seats</label><input type="number" value={newVehicle.seats} onChange={(e) => setNewVehicle(p => ({ ...p, seats: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
             </div>
-            <div className="flex gap-3 pt-2"><button onClick={() => setShowAddModal(false)} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button><button onClick={handleAddVehicle} className="flex-1 h-11 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">Add Vehicle</button></div>
+            <div className="flex gap-2 pt-2"><button onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleAddVehicle} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Add Vehicle</button></div>
           </div>
         </div>
       )}
 
-      {/* ═══ Assign Driver Modal ═══ */}
+      {/* Assign Driver Modal */}
       {showAssignModal && selectedVehicle && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <h2 className="text-lg font-bold">Assign Driver — {selectedVehicle.plate_number}</h2>
+          <div className="bg-white rounded-xl w-full max-w-md mx-4 p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Assign Driver — {selectedVehicle.plate_number}</h2>
             <p className="text-sm text-gray-500">Select a driver to assign to this vehicle</p>
-            <select value={assignDriverId} onChange={e => setAssignDriverId(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm"><option value="">Select driver...</option>{availableDrivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}</select>
-            <div className="flex gap-3"><button onClick={() => setShowAssignModal(false)} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button><button onClick={handleAssignDriver} className="flex-1 h-11 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">Assign</button></div>
+            <select value={assignDriverId} onChange={(e) => setAssignDriverId(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">Select driver...</option>
+              {availableDrivers.map(d => (
+                <option key={d.id} value={d.id}>{d.full_name}{d.plate_number ? ` (${d.plate_number})` : ""}</option>
+              ))}
+            </select>
+            <div className="flex gap-2"><button onClick={() => setShowAssignModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleAssignDriver} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Assign</button></div>
           </div>
         </div>
       )}
@@ -762,16 +837,12 @@ export default function VehiclesPage() {
   );
 }
 
-// ─── HELPERS ──────────────────────────────────────────────────
-function MCard({ icon: Icon, label, sub, value, color, bg }: { icon: React.ComponentType<{ className?: string }>; label: string; sub: string; value: number; color: string; bg: string }) {
-  return (<div className={`${bg} rounded-[18px] p-5 min-h-[140px] flex flex-col gap-1`}><div className="w-11 h-11 rounded-xl bg-white/60 flex items-center justify-center mb-0.5"><Icon className={`h-6 w-6 ${color}`} /></div><p className="text-[38px] font-bold text-gray-900 leading-tight">{value.toLocaleString()}</p><p className="text-sm font-medium text-gray-700 leading-tight">{label}</p><p className="text-xs text-gray-400">{sub}</p></div>);
-}
-function Detail({ label, value }: { label: string; value: string }) {
-  return (<div><p className="text-xs text-gray-400 mb-0.5">{label}</p><p className="text-sm font-medium text-gray-900">{value}</p></div>);
-}
-function CRow({ label, ok, okText, warn, warnText, failText }: { label: string; ok: boolean; okText: string; warn?: boolean; warnText: string; failText: string }) {
-  const c = ok ? "text-green-500" : warn ? "text-amber-500" : "text-gray-400";
-  const t = ok ? okText : warn ? warnText : failText;
-  const tc = ok ? "text-green-600" : warn ? "text-amber-600" : "text-gray-500";
-  return (<div className="flex items-center gap-2 text-sm"><CheckCircle className={`h-4 w-4 ${c}`} /><span className="text-gray-500">{label}</span><span className={`ml-auto font-medium ${tc}`}>{t}</span></div>);
+function StatBox({ icon: Icon, label, value, color, bg }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number; color: string; bg: string }) {
+  return (
+    <div className={`${bg} rounded-xl p-4`}>
+      <Icon className={`h-4 w-4 ${color}`} />
+      <p className="text-xl font-bold mt-2 text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500">{label}</p>
+    </div>
+  );
 }

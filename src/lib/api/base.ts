@@ -63,7 +63,7 @@ export async function pagedQuery<T>(
   page: number,
   pageSize: number,
   selectClause = "*",
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   buildFilters?: (q: any) => any,
   orderColumn = "created_at",
   orderDirection: "asc" | "desc" = "desc"
@@ -73,7 +73,7 @@ export async function pagedQuery<T>(
 
   try {
     // Total count
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let countQ: any = supabase.from(tableName).select(selectClause, { count: "exact", head: true });
     if (buildFilters) countQ = buildFilters(countQ);
 
@@ -87,7 +87,7 @@ export async function pagedQuery<T>(
     }
 
     // Paginated data
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let dataQ: any = supabase.from(tableName).select(selectClause, { count: "exact" });
     if (buildFilters) dataQ = buildFilters(dataQ);
     const { data, error } = await dataQ.order(orderColumn, { ascending: orderDirection === "asc" }).range(from, to);
@@ -121,7 +121,7 @@ export async function safeCount(
   filterValue?: unknown
 ): Promise<number> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let query: any = supabase.from(tableName).select("*", { count: "exact", head: true });
     if (filterColumn && filterValue !== undefined) {
       query = query.eq(filterColumn, filterValue);

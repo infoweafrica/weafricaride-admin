@@ -1,0 +1,253 @@
+import { supabase } from "@/lib/supabase";
+import type { Driver } from "@/lib/types";
+import type { PaginatedResult } from "./base";
+
+export interface DriverFilters {
+  search?: string;
+  approvalStatus?: string;
+  isOnline?: boolean;
+  cityId?: string;
+  vehicleType?: string;
+  driverTier?: string;
+}
+
+// ─── COUNT HELPERS (singleton stat fetch to reduce calls) ──────────
+
+let _cachedStats: {
+  totalDrivers: number;
+  activeDrivers: number;
+  onTripCount: number;
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  topByRating: Driver[];
+  topByEarnings: Driver[];
+} | null = null;
+
+async function fetchStats(cityId?: string): Promise<NonNullable<typeof _cachedStats>> {
+   
+  const rpcCityId: any = cityId || null;
+  const { data, error } = await supabase.rpc("admin_driver_stats", {
+    p_city_id: rpcCityId,
+  });
+
+  if (error || !data) {
+    return {
+      totalDrivers: 0,
+      activeDrivers: 0,
+      onTripCount: 0,
+      pendingCount: 0,
+      approvedCount: 0,
+      rejectedCount: 0,
+      topByRating: [],
+      topByEarnings: [],
+    };
+  }
+
+  // RPC returns JSONB which is auto-parsed by supabase-js
+   
+  const s = data as any;
+  return {
+    totalDrivers: s.totalDrivers || 0,
+    activeDrivers: s.activeDrivers || 0,
+    onTripCount: s.onTripCount || 0,
+    pendingCount: s.pendingCount || 0,
+    approvedCount: s.approvedCount || 0,
+    rejectedCount: s.rejectedCount || 0,
+    topByRating: normalizeDrivers(s.topByRating),
+    topByEarnings: normalizeDrivers(s.topByEarnings),
+  };
+}
+
+/** Flatten supabase-js nested objects from the RPC JSONB */
+ 
+function normalizeDrivers(raw: any[] | undefined): Driver[] {
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw.map((d) => ({
+    ...d,
+    // RPC returns flat fields, but Drivers page still reads nested user/vehicle
+    user: (d as any).user?.data || (d as any).user || {
+      full_name: (d as any).full_name,
+      email: (d as any).email,
+      phone: (d as any).phone,
+    },
+    vehicle: (d as any).vehicle?.data || (d as any).vehicle || {
+      plate_number: (d as any).vehicle_plate,
+      make: (d as any).vehicle_make,
+      model: (d as any).vehicle_model,
+      year: (d as any).vehicle_year,
+      color: (d as any).vehicle_color,
+      vehicle_type: (d as any).vehicle_type,
+    },
+  })) as Driver[];
+}
+
+// ─── COUNTS ────────────────────────────────────────────────────
+
+export async function fetchTotalDriversCount(cityId?: string): Promise<number> {
+  const s = await fetchStats(cityId);
+  return s.totalDrivers;
+}
+
+export async function fetchActiveDriversCount(cityId?: string): Promise<number> {
+  const s = await fetchStats(cityId);
+  return s.activeDrivers;
+}
+
+export async function fetchPendingApprovalsCount(): Promise<number> {
+  const s = await fetchStats();
+  return s.pendingCount;
+}
+
+export async function fetchApprovedDriversCount(): Promise<number> {
+  const s = await fetchStats();
+  return s.approvedCount;
+}
+
+export async function fetchRejectedDriversCount(): Promise<number> {
+  const s = await fetchStats();
+  return s.rejectedCount;
+}
+
+export async function fetchDriversOnTripCount(): Promise<number> {
+  const s = await fetchStats();
+  return s.onTripCount;
+}
+
+export async function fetchTotalDriverPayouts(): Promise<number> {
+  return 0;
+}
+
+// ─── FETCH DRIVERS ─────────────────────────────────────────────
+
+export async function fetchDrivers(
+  page = 1,
+  pageSize = 25,
+  filters?: DriverFilters,
+): Promise<PaginatedResult<Driver[]>> {
+  try {
+    const { data, error } = await supabase.rpc("admin_list_drivers", {
+       
+      p_page: page as any,
+       
+      p_page_size: pageSize as any,
+       
+      p_search: (filters?.search || "") as any,
+       
+      p_approval_status: (filters?.approvalStatus || "") as any,
+       
+      p_is_online: (filters?.isOnline !== undefined ? (filters.isOnline ? true : false) : null) as any,
+       
+      p_city_id: (filters?.cityId || null) as any,
+       
+      p_driver_tier: (filters?.driverTier || "") as any,
+    });
+
+    if (error) {
+      // RPC function not yet created — return empty
+      if (error.message.includes("Could not find the function")) {
+        return { data: [], error: null, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
+      }
+      return { data: null, error: error.message, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
+    }
+
+     
+    const result = data as any;
+    const arr = normalizeDrivers(result.data);
+
+    return {
+      data: arr,
+      error: null,
+      count: arr.length,
+      page: result.page || page,
+      pageSize: result.pagesize || pageSize,
+      totalCount: result.totalCount || 0,
+      totalPages: Math.ceil((result.totalCount || 0) / pageSize),
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return { data: null, error: msg, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
+  }
+}
+
+// ─── DRIVER ACTIONS ────────────────────────────────────────────
+
+export async function approveDriver(driverId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_approve_driver", {
+       
+      p_driver_id: driverId as any,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function rejectDriver(driverId: string, reason?: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_reject_driver", {
+       
+      p_driver_id: driverId as any,
+       
+      p_reason: (reason || "") as any,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function suspendDriver(driverId: string, reason?: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_suspend_driver", {
+       
+      p_driver_id: driverId as any,
+       
+      p_reason: (reason || "") as any,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteDriver(driverId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_delete_driver", {
+       
+      p_driver_id: driverId as any,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function forceDriverOffline(driverId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_force_driver_offline", {
+       
+      p_driver_id: driverId as any,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ─── TOP DRIVERS ───────────────────────────────────────────────
+
+export async function fetchTopDrivers(limit = 10): Promise<Driver[]> {
+  const s = await fetchStats();
+  return s.topByRating.slice(0, limit);
+}
+
+export async function fetchTopDriversByEarnings(limit = 10): Promise<Driver[]> {
+  const s = await fetchStats();
+  return s.topByEarnings.slice(0, limit);
+}
+
+// ─── LEGACY ALIASES ─────────────────────────────────────────────
+
+export const fetchDriver = fetchDrivers;

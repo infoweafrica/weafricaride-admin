@@ -76,7 +76,7 @@ export default function PayoutSettingsPage() {
   const fetchCommissions = useCallback(async () => {
     try {
       const { data } = await supabase.rpc("admin_list_commission_configs");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const raw = ((data as any)?.data || []) as CommissionConfig[];
       setCommissions(raw);
     } catch { /* */ }
@@ -85,7 +85,7 @@ export default function PayoutSettingsPage() {
   const fetchTaxConfigs = useCallback(async () => {
     try {
       const { data } = await supabase.rpc("admin_list_tax_configs");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const raw = ((data as any)?.data || []) as TaxConfig[];
       setTaxConfigs(raw);
     } catch { /* */ }
@@ -94,7 +94,7 @@ export default function PayoutSettingsPage() {
   const fetchFraudRules = useCallback(async () => {
     try {
       const { data } = await supabase.rpc("admin_list_fraud_rules");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const raw = ((data as any)?.data || []) as FraudRule[];
       setFraudRules(raw);
     } catch { /* */ }

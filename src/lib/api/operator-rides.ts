@@ -30,11 +30,12 @@ export function estimateOperatorFare(input: OperatorRideInput) {
   const perMin = 80;
   const durationMin = Math.max(5, Math.round(distanceKm * 2.5));
 
-  let multiplier = 1;
-  if (input.vehicle_type === "weafrica_xl") multiplier = 1.3;
-  if (input.vehicle_type === "weafrica_van") multiplier = 1.5;
-  if (input.vehicle_type === "weafrica_shuttle") multiplier = 1.8;
-  if (input.vehicle_type === "weafrica_black") multiplier = 2.0;
+  let multiplier = 1; // x (base tier)
+  if (input.vehicle_type === "go") multiplier = 0.85;
+  if (input.vehicle_type === "xl") multiplier = 1.3;
+  if (input.vehicle_type === "comfort") multiplier = 1.5;
+  if (input.vehicle_type === "black") multiplier = 2.0;
+  if (input.vehicle_type === "women") multiplier = 1.0;
 
   const fare = Math.round((baseFare + distanceKm * perKm + durationMin * perMin) * multiplier);
 

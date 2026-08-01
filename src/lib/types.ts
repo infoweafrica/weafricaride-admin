@@ -20,6 +20,7 @@ export type AdminRoleName =
   | 'customer_success'
   | 'marketing_manager'
   | 'moderator'
+  | 'investor'
   | 'analyst'
   | 'system_admin';
 
@@ -131,7 +132,7 @@ export const DEPARTMENT_GROUPS: DepartmentGroup[] = [
     department: 'analytics',
     label: 'Analytics',
     icon: '📊',
-    roles: ['superadmin', 'operations_manager', 'finance_manager', 'analyst', 'marketing_manager', 'customer_success'],
+    roles: ['superadmin', 'operations_manager', 'finance_manager', 'analyst', 'marketing_manager', 'customer_success', 'investor'],
   },
   {
     department: 'technical',
@@ -165,27 +166,40 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Rides', href: '/admin/rides', icon: '🚗', department: 'operations', permission: 'manage_rides' },
   { label: 'Dispatch Queue', href: '/admin/operations/dispatch', icon: '📡', department: 'operations', permission: 'dispatch_rides' },
   { label: 'Operator Booking', href: '/admin/operations/operator-booking', icon: '☎️', department: 'operations', permission: 'dispatch_rides' },
+  { label: 'Fleet Monitoring', href: '/admin/operations/fleet-monitoring', icon: '📋', department: 'operations', permission: 'view_live_map' },
+  { label: 'Service Zones', href: '/admin/operations/service-zones', icon: '📍', department: 'operations', permission: 'manage_rides' },
 
   // Drivers & Vehicles
   { label: 'Drivers', href: '/admin/drivers', icon: '🧑‍✈️', department: 'drivers', permission: 'manage_drivers' },
   { label: 'Onboarding', href: '/admin/drivers/onboarding', icon: '📝', department: 'drivers', permission: 'approve_drivers' },
   { label: 'Vehicles', href: '/admin/vehicles', icon: '🚙', department: 'drivers', permission: 'approve_vehicles' },
+  { label: 'Vehicle Classes', href: '/admin/vehicles/classes', icon: '🚘', department: 'drivers', permission: 'approve_vehicles' },
   { label: 'Riders', href: '/admin/users', icon: '🧑‍🤝‍🧑', department: 'drivers', permission: 'manage_users' },
+  { label: 'Driver Wallets', href: '/admin/drivers/wallets', icon: '👛', department: 'drivers', permission: 'manage_finance' },
+  { label: 'Driver Performance', href: '/admin/drivers/performance', icon: '📊', department: 'drivers', permission: 'view_analytics' },
 
   // Safety
+  { label: 'Safety Center', href: '/admin/safety/center', icon: '🛡️', department: 'safety', permission: 'manage_incidents' },
+  { label: 'Verification', href: '/admin/safety/verification', icon: '✅', department: 'safety', permission: 'approve_drivers' },
   { label: 'Incidents', href: '/admin/safety/incidents', icon: '🚨', department: 'safety', permission: 'manage_incidents' },
   { label: 'Emergencies', href: '/admin/safety/emergencies', icon: '🆘', department: 'safety', permission: 'manage_emergencies' },
   { label: 'Trip Playback', href: '/admin/safety/playback', icon: '▶️', department: 'safety', permission: 'view_trip_playback' },
 
   // Finance
   { label: 'Transactions', href: '/admin/finance/transactions', icon: '💳', department: 'finance', permission: 'manage_finance' },
+  { label: 'Driver Earnings', href: '/admin/finance/earnings', icon: '💰', department: 'finance', permission: 'manage_finance' },
+  { label: 'Commissions', href: '/admin/finance/commissions', icon: '📈', department: 'finance', permission: 'manage_pricing' },
   { label: 'Payouts', href: '/admin/finance/payouts', icon: '💸', department: 'finance', permission: 'approve_payouts' },
   { label: 'Refunds', href: '/admin/finance/refunds', icon: '↩️', department: 'finance', permission: 'process_refunds' },
+  { label: 'Wallets', href: '/admin/finance/wallets', icon: '🏦', department: 'finance', permission: 'manage_finance' },
+  { label: 'Reconciliation', href: '/admin/finance/reconciliation', icon: '🔄', department: 'finance', permission: 'manage_finance' },
   { label: 'Pricing', href: '/admin/finance/pricing', icon: '🏷️', department: 'finance', permission: 'manage_pricing' },
 
   // Support
   { label: 'Tickets', href: '/admin/support/tickets', icon: '🎫', department: 'support', permission: 'manage_support' },
   { label: 'Disputes', href: '/admin/support/disputes', icon: '⚖️', department: 'support', permission: 'manage_disputes' },
+  { label: 'Call Center', href: '/admin/support/call-center', icon: '📞', department: 'support', permission: 'manage_support' },
+  { label: 'Complaints', href: '/admin/support/complaints', icon: '⚠️', department: 'support', permission: 'manage_support' },
 
   // Marketing
   { label: 'Marketing Dashboard', href: '/admin/marketing/dashboard', icon: '📢', department: 'marketing', permission: 'manage_promotions' },
@@ -200,15 +214,21 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Driver Missions', href: '/admin/marketing/driver-missions', icon: '🎖️', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Demand Events', href: '/admin/marketing/events', icon: '📈', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Referrals', href: '/admin/marketing/referrals', icon: '🎁', department: 'marketing', permission: 'manage_promotions' },
+  { label: 'Corporate Accounts', href: '/admin/marketing/corporate-accounts', icon: '🏢', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Content Moderation', href: '/admin/marketing/moderation', icon: '🖼️', department: 'marketing', permission: 'moderate_content' },
 
   // Analytics
   { label: 'Reports', href: '/admin/analytics/reports', icon: '📈', department: 'analytics', permission: 'view_analytics' },
+  { label: 'Revenue Analytics', href: '/admin/analytics/revenue', icon: '📊', department: 'analytics', permission: 'view_analytics' },
+  { label: 'Driver Analytics', href: '/admin/analytics/drivers', icon: '🧑‍✈️', department: 'analytics', permission: 'view_analytics' },
+  { label: 'Rider Analytics', href: '/admin/analytics/riders', icon: '🧑‍🤝‍🧑', department: 'analytics', permission: 'view_analytics' },
 
   // Technical
   { label: 'Feature Flags', href: '/admin/technical/flags', icon: '🚩', department: 'technical', permission: 'system_settings' },
   { label: 'API Logs', href: '/admin/technical/logs', icon: '📜', department: 'technical', permission: 'view_logs' },
   { label: 'Integrations', href: '/admin/technical/integrations', icon: '🔌', department: 'technical', permission: 'manage_integrations' },
+  { label: 'Realtime Monitoring', href: '/admin/technical/realtime', icon: '📡', department: 'technical', permission: 'view_logs' },
+  { label: 'Notification Logs', href: '/admin/technical/notifications', icon: '🔔', department: 'technical', permission: 'view_logs' },
 ];
 
 // ─── GEOGRAPHY ────────────────────────────────────────
@@ -408,9 +428,9 @@ export interface Driver {
   total_earnings?: number;
   created_at: string;
   // Supabase join fields (used by drivers page)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   user?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vehicle?: Record<string, any>;
   is_online?: boolean;
   approval_status?: string;
@@ -643,13 +663,13 @@ export interface Ride {
   cancelled_at?: string;
   cancellation_reason?: string;
   // Supabase join fields (used by dashboard/rides pages)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   rider?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   driver?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vehicle?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   category?: Record<string, any>;
   actual_fare?: number;
   estimated_fare?: number;
@@ -890,7 +910,9 @@ export interface Vehicle {
   vehicle_insurance_url?: string;
   vehicle_photo_urls?: string[] | null;
   updated_at?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vehicle_class_id?: string | null;
+  vehicle_class?: { id: string; name: string; slug: string } | null;
+
   driver?: Record<string, any>;
 }
 
@@ -905,7 +927,7 @@ export interface Wallet {
   created_at: string;
   updated_at: string;
   // Supabase join fields
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   user?: Record<string, any>;
   ride_credits?: number;
   promo_balance?: number;
@@ -957,7 +979,7 @@ export interface DriverPayout {
   ride_count: number;
   created_at: string;
   // Supabase join field
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   driver?: Record<string, any>;
 }
 

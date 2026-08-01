@@ -87,7 +87,7 @@ function RidesContent() {
     setPagination({
       page: result.page,
       pageSize: result.pageSize,
-      totalCount: result.totalCount,
+      totalCount: result.totalCount ?? 0,
       totalPages: result.totalPages,
       count: result.count,
       error: result.error,
@@ -151,11 +151,9 @@ function RidesContent() {
     "accepted",
     "driver_arriving",
     "driver_arrived",
-    "arrived",
     "in_progress",
     "completed",
     "cancelled",
-    "no_driver_found",
     "scheduled",
   ];
 
@@ -166,8 +164,8 @@ function RidesContent() {
           <h1 className="text-2xl font-bold text-gray-900">Rides</h1>
           <p className="text-gray-500 mt-1">
             {selectedCityName === "All Cities"
-              ? `${pagination.totalCount.toLocaleString()} total rides — view and manage`
-              : `${pagination.totalCount.toLocaleString()} rides in ${selectedCityName}`}
+              ? `${String(pagination.totalCount ?? 0)} total rides — view and manage`
+              : `${String(pagination.totalCount ?? 0)} rides in ${selectedCityName}`}
           </p>
         </div>
       </div>
@@ -255,13 +253,10 @@ function RidesContent() {
                 <tbody>
                   {filteredRides.length > 0 ? (
                     filteredRides.map((ride) => {
-                      const riderObj = ride.rider as unknown as { full_name?: string; user?: { full_name?: string } } | null;
-                      const driverObj = ride.driver as unknown as { full_name?: string; user?: { full_name?: string } } | null;
-
                       const riderName =
-                        riderObj?.full_name || riderObj?.user?.full_name || "N/A";
+                        (ride.rider as unknown as { user?: { full_name?: string } })?.user?.full_name || "N/A";
                       const driverName =
-                        driverObj?.full_name || driverObj?.user?.full_name || "Unassigned";
+                        (ride.driver as unknown as { user?: { full_name?: string } })?.user?.full_name || "Unassigned";
                       const categoryName =
                         (ride.category as unknown as { name?: string })?.name || "N/A";
                       return (

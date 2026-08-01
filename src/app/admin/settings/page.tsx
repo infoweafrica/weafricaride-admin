@@ -423,95 +423,6 @@ const settingsData: SettingSection[] = [
     ],
   },
   {
-    id: "ride_class", title: "Ride Classes", icon: Car,
-    groups: [
-      {
-        title: "WeAfrica X (Economy)", icon: Car,
-        fields: [
-          { key: "rc_x_enabled", label: "Enabled", description: "Enable economy rides", type: "toggle", value: true },
-          { key: "rc_x_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "500" },
-          { key: "rc_x_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "400" },
-          { key: "rc_x_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "50" },
-          { key: "rc_x_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "600" },
-          { key: "rc_x_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "20" },
-          { key: "rc_x_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "4" },
-        ],
-      },
-      {
-        title: "WeAfrica XL (Comfort)", icon: Car,
-        fields: [
-          { key: "rc_xl_enabled", label: "Enabled", description: "Enable comfort/XL rides", type: "toggle", value: true },
-          { key: "rc_xl_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "800" },
-          { key: "rc_xl_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "600" },
-          { key: "rc_xl_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "75" },
-          { key: "rc_xl_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "1000" },
-          { key: "rc_xl_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "22" },
-          { key: "rc_xl_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "6" },
-        ],
-      },
-      {
-        title: "WeAfrica Women", icon: Users,
-        fields: [
-          { key: "rc_women_enabled", label: "Enabled", description: "Enable women-only rides", type: "toggle", value: false },
-          { key: "rc_women_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "700" },
-          { key: "rc_women_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "500" },
-          { key: "rc_women_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "60" },
-          { key: "rc_women_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "800" },
-          { key: "rc_women_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "20" },
-          { key: "rc_women_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "4" },
-        ],
-      },
-      {
-        title: "WeAfrica Van", icon: Car,
-        fields: [
-          { key: "rc_van_enabled", label: "Enabled", description: "Enable van/minibus rides", type: "toggle", value: false },
-          { key: "rc_van_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "1200" },
-          { key: "rc_van_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "800" },
-          { key: "rc_van_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "100" },
-          { key: "rc_van_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "1500" },
-          { key: "rc_van_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "25" },
-          { key: "rc_van_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "14" },
-        ],
-      },
-      {
-        title: "WeAfrica Shuttle", icon: Car,
-        fields: [
-          { key: "rc_shuttle_enabled", label: "Enabled", description: "Enable shuttle/bus services", type: "toggle", value: false },
-          { key: "rc_shuttle_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "2000" },
-          { key: "rc_shuttle_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "1000" },
-          { key: "rc_shuttle_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "150" },
-          { key: "rc_shuttle_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "2500" },
-          { key: "rc_shuttle_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "25" },
-          { key: "rc_shuttle_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "25" },
-        ],
-      },
-      {
-        title: "WeAfrica Black (Premium)", icon: Car,
-        fields: [
-          { key: "rc_black_enabled", label: "Enabled", description: "Enable premium/luxury rides", type: "toggle", value: false },
-          { key: "rc_black_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "1500" },
-          { key: "rc_black_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "1000" },
-          { key: "rc_black_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "150" },
-          { key: "rc_black_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "2000" },
-          { key: "rc_black_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "25" },
-          { key: "rc_black_passenger_capacity", label: "Passenger Capacity", description: "Max passengers", type: "number", value: "4" },
-        ],
-      },
-      {
-        title: "WeAfrica Delivery", icon: Briefcase,
-        fields: [
-          { key: "rc_delivery_enabled", label: "Enabled", description: "Enable package delivery", type: "toggle", value: false },
-          { key: "rc_delivery_base_fare", label: "Base Fare (MWK)", description: "Starting fare", type: "number", value: "400" },
-          { key: "rc_delivery_per_km", label: "Per Km (MWK)", description: "Price per kilometer", type: "number", value: "300" },
-          { key: "rc_delivery_per_min", label: "Per Minute (MWK)", description: "Price per minute", type: "number", value: "40" },
-          { key: "rc_delivery_min_fare", label: "Minimum Fare (MWK)", description: "Lowest chargeable fare", type: "number", value: "500" },
-          { key: "rc_delivery_commission_pct", label: "Commission %", description: "Platform commission", type: "number", value: "20" },
-          { key: "rc_delivery_luggage_capacity", label: "Max Weight (kg)", description: "Maximum package weight", type: "number", value: "25" },
-        ],
-      },
-    ],
-  },
-  {
     id: "admin_roles", title: "Admin Roles", icon: Shield,
     groups: [
       {
@@ -543,13 +454,13 @@ const settingsData: SettingSection[] = [
 
 // PERMISSION MAP: which admin role can edit which section
 const roleSectionPermissions: Record<string, string[]> = {
-  superadmin: ["general","rider","driver","finance","promo","dispatch","notifications","safety","vehicle","ride_class","admin_roles"],
-  operations_manager: ["general","rider","driver","vehicle","dispatch","ride_class"],
-  finance_manager: ["finance","promo"],
-  support_agent: [], // read only
-  dispatch_operator: ["dispatch","driver"],
-  marketing_manager: ["promo","notifications"],
-  analyst: [],
+  super_admin: ["general","rider","driver","finance","promo","dispatch","notifications","safety","vehicle","admin_roles"],
+  operations_admin: ["general","rider","driver","vehicle","dispatch"],
+  finance_admin: ["finance","promo"],
+  support_admin: [], // read only
+  dispatch_admin: ["dispatch","driver"],
+  marketing_admin: ["promo","notifications"],
+  read_only_admin: [],
 };
 
 function canEditSection(roleName: string | undefined, section: string): boolean {

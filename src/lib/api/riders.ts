@@ -110,15 +110,20 @@ export async function addWalletBonus(
   amount: number,
   description: string
 ) {
-  const { error } = await supabase.from("wallet_transactions").insert({
-    wallet_id: walletId,
-    transaction_type: "topup",
-    amount,
-    balance_before: 0,
-    balance_after: amount,
-    description,
+  // Goes through the same atomic, balance-updating RPC the rider app uses
+  // for top-ups, rather than inserting a standalone ledger row that never
+  // touched wallets.balance.
+  const { data, error } = await supabase.rpc("credit_wallet", {
+    p_wallet_id: walletId,
+    p_amount: amount,
+    p_type: "bonus",
+    p_description: description,
   });
-  return { success: !error, error: error?.message || null };
+  const response = data as { success?: boolean; error?: string } | null;
+  if (error || response?.success === false) {
+    return { success: false, error: error?.message || response?.error || "Failed to add bonus" };
+  }
+  return { success: true, error: null };
 }
 // ─── Fetch Rider Trips ───────────────────────────────
 export async function fetchRiderTrips(riderId: string) {

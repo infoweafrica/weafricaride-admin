@@ -25,229 +25,217 @@ let _cachedStats: {
 } | null = null;
 
 async function fetchStats(cityId?: string): Promise<NonNullable<typeof _cachedStats>> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rpcCityId: any = cityId || null;
+  // Use the correct parameter name: p_city_id
   const { data, error } = await supabase.rpc("admin_driver_stats", {
-    p_city_id: rpcCityId,
+    p_city_id: cityId || null,
   });
-
-  if (error || !data) {
-    return {
-      totalDrivers: 0,
-      activeDrivers: 0,
-      onTripCount: 0,
-      pendingCount: 0,
-      approvedCount: 0,
-      rejectedCount: 0,
-      topByRating: [],
-      topByEarnings: [],
-    };
+  
+  if (error) {
+    // If RPC fails, fall back to direct queries
+    console.warn("RPC admin_driver_stats failed, falling back to direct queries:", error);
+    return await fetchStatsFallback(cityId);
   }
-
-  // RPC returns JSONB which is auto-parsed by supabase-js
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const s = data as any;
+  
   return {
-    totalDrivers: s.totalDrivers || 0,
-    activeDrivers: s.activeDrivers || 0,
-    onTripCount: s.onTripCount || 0,
-    pendingCount: s.pendingCount || 0,
-    approvedCount: s.approvedCount || 0,
-    rejectedCount: s.rejectedCount || 0,
-    topByRating: normalizeDrivers(s.topByRating),
-    topByEarnings: normalizeDrivers(s.topByEarnings),
+    totalDrivers: data?.total_drivers || 0,
+    activeDrivers: data?.active_drivers || 0,
+    onTripCount: data?.on_trip_count || 0,
+    pendingCount: data?.pending_count || 0,
+    approvedCount: data?.approved_count || 0,
+    rejectedCount: data?.rejected_count || 0,
+    topByRating: data?.top_by_rating || [],
+    topByEarnings: data?.top_by_earnings || [],
   };
 }
 
-/** Flatten supabase-js nested objects from the RPC JSONB */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeDrivers(raw: any[] | undefined): Driver[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw.map((d) => ({
-    ...d,
-    // RPC returns flat fields, but Drivers page still reads nested user/vehicle
-    user: (d as any).user?.data || (d as any).user || {
-      full_name: (d as any).full_name,
-      email: (d as any).email,
-      phone: (d as any).phone,
-    },
-    vehicle: (d as any).vehicle?.data || (d as any).vehicle || {
-      plate_number: (d as any).vehicle_plate,
-      make: (d as any).vehicle_make,
-      model: (d as any).vehicle_model,
-      year: (d as any).vehicle_year,
-      color: (d as any).vehicle_color,
-      vehicle_type: (d as any).vehicle_type,
-    },
-  })) as Driver[];
+// Fallback function using direct queries if RPC fails
+async function fetchStatsFallback(cityId?: string): Promise<NonNullable<typeof _cachedStats>> {
+  const [totalDrivers, activeDrivers, pendingCount] = await Promise.all([
+    fetchTotalDriversCount(cityId),
+    fetchActiveDriversCount(cityId),
+    fetchPendingApprovalsCount(cityId),
+  ]);
+
+  return {
+    totalDrivers,
+    activeDrivers,
+    onTripCount: 0,
+    pendingCount,
+    approvedCount: 0,
+    rejectedCount: 0,
+    topByRating: [],
+    topByEarnings: [],
+  };
 }
 
-// ─── COUNTS ────────────────────────────────────────────────────
-
 export async function fetchTotalDriversCount(cityId?: string): Promise<number> {
-  const s = await fetchStats(cityId);
-  return s.totalDrivers;
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true });
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
 export async function fetchActiveDriversCount(cityId?: string): Promise<number> {
-  const s = await fetchStats(cityId);
-  return s.activeDrivers;
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true })
+    .eq("is_online", true);
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
-export async function fetchPendingApprovalsCount(): Promise<number> {
-  const s = await fetchStats();
-  return s.pendingCount;
+export async function fetchPendingApprovalsCount(cityId?: string): Promise<number> {
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true })
+    .eq("approval_status", "pending");
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
-export async function fetchApprovedDriversCount(): Promise<number> {
-  const s = await fetchStats();
-  return s.approvedCount;
-}
-
-export async function fetchRejectedDriversCount(): Promise<number> {
-  const s = await fetchStats();
-  return s.rejectedCount;
-}
-
-export async function fetchDriversOnTripCount(): Promise<number> {
-  const s = await fetchStats();
-  return s.onTripCount;
-}
-
-export async function fetchTotalDriverPayouts(): Promise<number> {
+export async function fetchTotalDriverPayouts(cityId?: string): Promise<number> {
+  // Placeholder - you can implement this based on your payout table
   return 0;
 }
-
-// ─── FETCH DRIVERS ─────────────────────────────────────────────
 
 export async function fetchDrivers(
   page = 1,
   pageSize = 25,
   filters?: DriverFilters,
 ): Promise<PaginatedResult<Driver[]>> {
-  try {
-    const { data, error } = await supabase.rpc("admin_list_drivers", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_page: page as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_page_size: pageSize as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_search: (filters?.search || "") as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_approval_status: (filters?.approvalStatus || "") as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_is_online: (filters?.isOnline !== undefined ? (filters.isOnline ? true : false) : null) as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_city_id: (filters?.cityId || null) as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_tier: (filters?.driverTier || "") as any,
-    });
+  const offset = (page - 1) * pageSize;
 
-    if (error) {
-      // RPC function not yet created — return empty
-      if (error.message.includes("Could not find the function")) {
-        return { data: [], error: null, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
-      }
-      return { data: null, error: error.message, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
-    }
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = data as any;
-    const arr = normalizeDrivers(result.data);
-
-    return {
-      data: arr,
-      error: null,
-      count: arr.length,
-      page: result.page || page,
-      pageSize: result.pagesize || pageSize,
-      totalCount: result.totalCount || 0,
-      totalPages: Math.ceil((result.totalCount || 0) / pageSize),
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    return { data: null, error: msg, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
+  if (filters?.approvalStatus) {
+    query = query.eq("approval_status", filters.approvalStatus);
   }
-}
 
-// ─── DRIVER ACTIONS ────────────────────────────────────────────
-
-export async function approveDriver(driverId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.rpc("admin_approve_driver", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_id: driverId as any,
-    });
-    return !error;
-  } catch {
-    return false;
+  if (filters?.isOnline !== undefined) {
+    query = query.eq("is_online", filters.isOnline);
   }
-}
 
-export async function rejectDriver(driverId: string, reason?: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.rpc("admin_reject_driver", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_id: driverId as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_reason: (reason || "") as any,
-    });
-    return !error;
-  } catch {
-    return false;
+  if (filters?.cityId) {
+    query = query.eq("city_id", filters.cityId);
   }
-}
 
-export async function suspendDriver(driverId: string, reason?: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.rpc("admin_suspend_driver", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_id: driverId as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_reason: (reason || "") as any,
-    });
-    return !error;
-  } catch {
-    return false;
+  if (filters?.search) {
+    query = query.ilike("full_name", `%${filters.search}%`);
   }
-}
 
-export async function deleteDriver(driverId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.rpc("admin_delete_driver", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_id: driverId as any,
-    });
-    return !error;
-  } catch {
-    return false;
+  const { data, error, count } = await query;
+  if (error) {
+    return { data: null, error: error.message, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
   }
+
+  const totalCount = count || 0;
+  return {
+    data: data || [],
+    error: null,
+    count: (data || []).length,
+    page,
+    pageSize,
+    totalCount,
+    totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+  };
 }
 
-export async function forceDriverOffline(driverId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.rpc("admin_force_driver_offline", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      p_driver_id: driverId as any,
-    });
-    return !error;
-  } catch {
-    return false;
-  }
+export async function approveDriver(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("drivers")
+    .update({ approval_status: "approved", is_active: true })
+    .eq("id", id);
+  return !error;
 }
 
-// ─── TOP DRIVERS ───────────────────────────────────────────────
-
-export async function fetchTopDrivers(limit = 10): Promise<Driver[]> {
-  const s = await fetchStats();
-  return s.topByRating.slice(0, limit);
+export async function rejectDriver(id: string, reason?: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("drivers")
+    .update({ approval_status: "rejected", rejection_reason: reason || null })
+    .eq("id", id);
+  return !error;
 }
 
-export async function fetchTopDriversByEarnings(limit = 10): Promise<Driver[]> {
-  const s = await fetchStats();
-  return s.topByEarnings.slice(0, limit);
+export async function suspendDriver(id: string, reason?: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("drivers")
+    .update({ is_active: false, approval_status: "suspended", rejection_reason: reason || null })
+    .eq("id", id);
+  return !error;
 }
 
-// ─── LEGACY ALIASES ─────────────────────────────────────────────
+export async function forceDriverOffline(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("drivers")
+    .update({ is_online: false })
+    .eq("id", id);
+  return !error;
+}
 
-export const fetchDriver = fetchDrivers;
+export async function fetchApprovedDriversCount(cityId?: string): Promise<number> {
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true })
+    .eq("approval_status", "approved");
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function fetchRejectedDriversCount(cityId?: string): Promise<number> {
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true })
+    .eq("approval_status", "rejected");
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function fetchDriversOnTripCount(cityId?: string): Promise<number> {
+  let query = supabase
+    .from("drivers")
+    .select("*", { count: "exact", head: true })
+    .eq("is_on_trip", true);
+  if (cityId) query = query.eq("city_id", cityId);
+  const { count, error } = await query;
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function fetchTopDrivers(limit = 5, cityId?: string): Promise<Driver[]> {
+  let query = supabase
+    .from("drivers")
+    .select("*")
+    .eq("approval_status", "approved")
+    .order("rating", { ascending: false })
+    .limit(limit);
+  if (cityId) query = query.eq("city_id", cityId);
+  const { data } = await query;
+  return (data as Driver[]) || [];
+}
+
+export async function fetchTopDriversByEarnings(limit = 5, cityId?: string): Promise<Driver[]> {
+  let query = supabase
+    .from("drivers")
+    .select("*")
+    .eq("approval_status", "approved")
+    .order("total_earnings", { ascending: false })
+    .limit(limit);
+  if (cityId) query = query.eq("city_id", cityId);
+  const { data } = await query;
+  return (data as Driver[]) || [];
+}

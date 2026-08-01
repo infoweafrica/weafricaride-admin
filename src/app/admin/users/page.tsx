@@ -14,21 +14,10 @@ import { formatCurrency, timeAgo } from "@/lib/utils";
 import {
   fetchRiders, fetchRiderStats, suspendRider, activateRider,
   deleteRider, verifyRiderPhone, verifyRiderEmail, verifyRiderId,
-  fetchRiderTrips,
-  fetchRiderComplaints,
 } from "@/lib/api/riders";
 import type { Rider } from "@/lib/types";
 
-type RiderTab =
-  | "overview"
-  | "all"
-  | "active"
-  | "suspended"
-  | "wallets"
-  | "verification"
-  | "support"
-  | "activity"
-  | "analytics";
+type RiderTab = "overview" | "all" | "active" | "suspended" | "wallets" | "verification" | "support" | "analytics";
 
 export default function RidersPage() {
   return <ErrorBoundary><RidersContent /></ErrorBoundary>;
@@ -53,11 +42,6 @@ function RidersContent() {
   const [showDetail, setShowDetail] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-const [riderTrips,setRiderTrips]=useState<Record<string,unknown>[]>([]);
-const [activityLoading,setActivityLoading]=useState(false);
-const [complaints,setComplaints]=useState<Record<string,unknown>[]>([]);
-const [supportLoading,setSupportLoading]=useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -85,14 +69,6 @@ const [supportLoading,setSupportLoading]=useState(false);
   }, [page, pageSize, search, statusFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-const loadActivity=async()=>{
-if(!selectedRider)return;
-setActivityLoading(true);
-const result=await fetchRiderTrips(selectedRider.id);
-setRiderTrips((result.data as Record<string,unknown>[])||[]);
-setActivityLoading(false);
-};
 
   const handleSuspend = async (id: string) => {
     setActionLoading(id);
@@ -143,51 +119,40 @@ setActivityLoading(false);
     { id: "wallets", label: "Wallets", icon: Wallet },
     { id: "verification", label: "Verification", icon: BadgeCheck },
     { id: "support", label: "Support", icon: Ticket },
-    { id: "activity", label: "Ride Activity", icon: Activity },
     { id: "analytics", label: "Analytics", icon: TrendingUp },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-2xl bg-green-50 flex items-center justify-center">
-            <UsersIcon className="h-6 w-6 text-green-600" />
-          </div>
-
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Riders</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {stats.total} riders — passenger management, wallets, trips and support
-            </p>
-          </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Riders</h1>
+          <p className="text-gray-500 mt-1">{stats.total} riders — passenger management</p>
         </div>
       </div>
       <ApiErrorDisplay error={error} onRetry={loadData} />
 
       {/* Tabs */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-2 shadow-sm overflow-x-auto">
-        <div className="flex gap-2 min-w-max">
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => { setActiveTab(id); setPage(1); }}
-            className={`flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === id ? "bg-green-600 text-white shadow-sm shadow-green-200" : "text-gray-600 hover:bg-gray-50"}`}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === id ? "border-green-600 text-green-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
           >
             <Icon className="h-4 w-4" /> {label}
           </button>
         ))}
-        </div>
       </div>
 
       {/* ===== OVERVIEW ===== */}
       {activeTab === "overview" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <RiderStatBox icon={UsersIcon} label="Total Riders" value={stats.total} color="text-blue-600" bg="bg-blue-50" />
-            <RiderStatBox icon={CheckCircle} label="Active Riders" value={stats.active} color="text-green-600" bg="bg-green-50" />
+            <RiderStatBox icon={CheckCircle} label="Active" value={stats.active} color="text-green-600" bg="bg-green-50" />
             <RiderStatBox icon={Ban} label="Suspended" value={stats.suspended} color="text-amber-600" bg="bg-amber-50" />
-            <RiderStatBox icon={BadgeCheck} label="Verified Riders" value={stats.verified} color="text-purple-600" bg="bg-purple-50" />
+            <RiderStatBox icon={BadgeCheck} label="Verified" value={stats.verified} color="text-purple-600" bg="bg-purple-50" />
             <RiderStatBox icon={UserPlus} label="New This Week" value={stats.newThisWeek} color="text-cyan-600" bg="bg-cyan-50" />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
@@ -222,106 +187,68 @@ setActivityLoading(false);
             {loading ? (
               <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div></div>
             ) : (
-              
-<div className="divide-y divide-gray-100">
-
-{(activeTab === "all"
-? filteredRiders
-: riders.filter(r => activeTab === "active"
-? r.status === "active"
-: r.status === "suspended")
-).map((rider)=>(
-
-<div
-key={rider.id}
-className="p-5 hover:bg-gray-50 transition-colors"
->
-
-<div className="flex items-center justify-between">
-
-<div className="flex items-center gap-4">
-
-<div className="h-12 w-12 rounded-2xl bg-green-100 flex items-center justify-center text-green-700 font-bold">
-{(rider.full_name || "R")[0].toUpperCase()}
-</div>
-
-<div>
-
-<p className="font-semibold text-gray-900">
-{rider.full_name || "Unknown Rider"}
-</p>
-
-<p className="text-sm text-gray-500">
-{rider.phone || rider.email || "No contact"}
-</p>
-
-</div>
-
-</div>
-
-<div className="flex gap-6 text-sm">
-
-<div>
-<p className="text-gray-400">Trips</p>
-<p className="font-semibold">{rider.total_rides ?? 0}</p>
-</div>
-
-<div>
-<p className="text-gray-400">Rating</p>
-<p className="font-semibold">
-{rider.rating?.toFixed(1) ?? "—"}
-</p>
-</div>
-
-<div>
-<p className="text-gray-400">Status</p>
-<p className="font-semibold">
-{rider.status}
-</p>
-</div>
-
-</div>
-
-<div className="flex items-center gap-2">
-
-<button
-onClick={async()=>{setSelectedRider(rider);setShowDetail(true);setActivityLoading(true);const result=await fetchRiderTrips(rider.id);setRiderTrips((result.data as Record<string,unknown>[])||[]);setActivityLoading(false);}}
-className="h-9 px-3 rounded-xl border"
->
-View
-</button>
-
-<button
-onClick={()=>{
-rider.status==="active"
-? handleSuspend(rider.id)
-: handleActivate(rider.id)
-}}
-className="h-9 px-3 rounded-xl bg-gray-100"
->
-{rider.status==="active" ? "Suspend" : "Activate"}
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-))}
-
-{filteredRiders.length===0 && (
-<div className="p-12">
-<EmptyState
-icon={UsersIcon}
-title="No riders found"
-description="Riders will appear here"
-/>
-</div>
-)}
-
-</div>
-
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Phone</th>
+                      <th className="px-4 py-3 font-medium">Email</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium text-right">Total Trips</th>
+                      <th className="px-4 py-3 font-medium text-right">Rating</th>
+                      <th className="px-4 py-3 font-medium">Joined</th>
+                      <th className="px-4 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(activeTab === "all" ? filteredRiders : riders.filter(r => activeTab === "active" ? r.status === "active" : r.status === "suspended")).map((rider) => (
+                      <tr key={rider.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-medium text-xs">
+                              {(rider.full_name || "R").charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 text-xs">{rider.full_name || "Unknown"}</p>
+                              <p className="text-xs text-gray-400">ID: {rider.id?.slice(0, 8)}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{rider.phone || (rider.user as Record<string, unknown>)?.phone as string || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{rider.email || (rider.user as Record<string, unknown>)?.email as string || "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${rider.status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                            {rider.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs font-medium">{rider.total_rides ?? 0}</td>
+                        <td className="px-4 py-3 text-right text-xs">
+                          <span className="flex items-center justify-end gap-1">
+                            <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                            {rider.rating?.toFixed(1) ?? "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{timeAgo(rider.created_at)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => { setSelectedRider(rider); setShowDetail(true); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="View"><Eye className="h-4 w-4" /></button>
+                            {rider.status === "active" ? (
+                              <button onClick={() => handleSuspend(rider.id)} disabled={actionLoading === rider.id} className="p-1.5 hover:bg-red-50 rounded-lg text-red-600" title="Suspend"><Ban className="h-4 w-4" /></button>
+                            ) : (
+                              <button onClick={() => handleActivate(rider.id)} disabled={actionLoading === rider.id} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Activate"><CheckCircle className="h-4 w-4" /></button>
+                            )}
+                            <button onClick={() => { setSelectedRider(rider); setShowDelete(true); }} className="p-1.5 hover:bg-red-50 rounded-lg text-red-500" title="Delete"><Trash2 className="h-4 w-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRiders.length === 0 && (
+                      <tr><td colSpan={8} className="px-6 py-12"><EmptyState icon={UsersIcon} title="No riders found" description={statusFilter === "all" ? "Riders will appear here once they register" : `No ${statusFilter} riders found`} /></td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
             <Pagination page={page} totalPages={totalPages} totalCount={totalCount} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
           </div>
@@ -399,61 +326,10 @@ description="Riders will appear here"
 
       {/* ===== SUPPORT ===== */}
       {activeTab === "support" && (
-        <RiderSupportTab
-          complaints={complaints}
-          loading={supportLoading}
-          onLoad={async () => {
-            setSupportLoading(true);
-            const result = await fetchRiderComplaints();
-            setComplaints((result.data as Record<string, unknown>[]) || []);
-            setSupportLoading(false);
-          }}
-        />
-      )}
-
-      {/* ===== RIDE ACTIVITY ===== */}
-      {activeTab === "activity" && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-sm font-semibold text-gray-900">Select a rider to view trip history</p>
-            <p className="text-xs text-gray-500 mt-1">Open All Riders, click View, then use the rider detail to check trips.</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b">
-              <p className="font-semibold text-gray-900">Recent Rider Trips</p>
-              <p className="text-xs text-gray-500">Trip history will load after selecting a rider.</p>
-            </div>
-
-            {activityLoading ? (
-              <div className="p-8 text-center text-gray-400">Loading trips...</div>
-            ) : riderTrips.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">No rider trip history loaded yet.</div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {riderTrips.map((trip) => (
-                  <div key={trip.id as string} className="p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {(trip.pickup_address as string) || "Pickup"} → {(trip.dropoff_address as string) || "Dropoff"}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Status: {(trip.status as string) || "—"} • Payment: {(trip.payment_status as string) || "—"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-gray-900">
-                        {formatCurrency(((trip.fare_total || trip.total_fare || 0) as number))}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {trip.created_at ? timeAgo(trip.created_at as string) : ""}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+          <Ticket className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">Rider Support</p>
+          <p className="text-sm text-gray-400 mt-1">Support tickets and complaints — coming soon</p>
         </div>
       )}
 
@@ -525,20 +401,6 @@ description="Riders will appear here"
                 </div>
               </div>
               <div className="flex gap-2 pt-4 border-t">
-                <button
-                  onClick={async () => {
-                    setActivityLoading(true);
-                    const result = await fetchRiderTrips(selectedRider.id);
-                    setRiderTrips((result.data as Record<string, unknown>[]) || []);
-                    setActivityLoading(false);
-                    setShowDetail(false);
-                    setActiveTab("activity");
-                  }}
-                  className="flex-1 px-4 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg text-sm font-medium text-blue-700"
-                >
-                  View Trips
-                </button>
-
                 {selectedRider.status === "active" ? (
                   <button onClick={() => { handleSuspend(selectedRider.id); setShowDetail(false); }} disabled={actionLoading === selectedRider.id} className="flex-1 px-4 py-2 bg-red-50 hover:bg-red-100 rounded-lg text-sm font-medium text-red-700">Suspend Rider</button>
                 ) : (
@@ -564,63 +426,6 @@ description="Riders will appear here"
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-
-function RiderSupportTab({
-  complaints,
-  loading,
-  onLoad,
-}: {
-  complaints: Record<string, unknown>[];
-  loading: boolean;
-  onLoad: () => void;
-}) {
-  useEffect(() => {
-    onLoad();
-  }, []);
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-        <div>
-          <p className="font-semibold text-gray-900">Rider Support & Complaints</p>
-          <p className="text-xs text-gray-500">View rider tickets, complaints, abuse reports and support cases.</p>
-        </div>
-        <button onClick={onLoad} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium">
-          Refresh
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-gray-400">Loading support tickets...</div>
-        ) : complaints.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">No rider support tickets found.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {complaints.map((ticket) => (
-              <div key={ticket.id as string} className="p-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {(ticket.subject as string) || (ticket.title as string) || "Support Ticket"}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Status: {(ticket.status as string) || "open"} • Priority: {(ticket.priority as string) || "normal"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-400">
-                    {ticket.created_at ? timeAgo(ticket.created_at as string) : ""}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -750,12 +555,10 @@ function RiderWalletsTab() {
 
 function RiderStatBox({ icon: Icon, label, value, color, bg }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number; color: string; bg: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-all">
-      <div className={`${bg} h-12 w-12 rounded-2xl flex items-center justify-center`}>
-        <Icon className={`h-6 w-6 ${color}`} />
-      </div>
-      <p className="text-3xl font-bold mt-4 text-gray-900">{value}</p>
-      <p className="text-sm font-medium text-gray-500 mt-1">{label}</p>
+    <div className={`${bg} rounded-xl p-4`}>
+      <Icon className={`h-4 w-4 ${color}`} />
+      <p className="text-xl font-bold mt-2 text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500">{label}</p>
     </div>
   );
 }

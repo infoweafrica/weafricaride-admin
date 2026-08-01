@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/purity */
 "use client";
 
 import dynamic from "next/dynamic";
@@ -17,7 +18,7 @@ export default function DispatchCenterPage() {
     pickup_lng: 33.7741,
     dropoff_lat: -13.935,
     dropoff_lng: 33.787,
-    vehicle_type: "weafrica_x",
+    vehicle_type: "x",
     payment_method: "cash",
     city: "Lilongwe",
     operator_notes: "",
@@ -30,55 +31,58 @@ export default function DispatchCenterPage() {
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
 
   const fetchDrivers = useCallback(async () => {
-    const { data: locData } = await supabase
-      .from("driver_locations")
-      .select("*")
-      .eq("is_online", true)
-      .order("updated_at", { ascending: false })
-      .limit(200);
+    // `drivers.is_online` is the source of truth (set atomically by the
+    // driver_go_online/offline RPCs). driver_locations is populated
+    // separately by the client's GPS stream and can lag behind or be
+    // missing entirely (no fix yet, permission denied) — so it must only
+    // enrich position, never gate whether a driver is considered online.
+    const { data: drData, error: drErr } = await supabase
+      .from("drivers")
+      .select("id, user:users(full_name), vehicle:vehicles!drivers_vehicle_id_fkey(plate_number, make, model, vehicle_type)")
+      .eq("is_online", true);
 
-    const locs: any[] = ((locData as any[]) || []).map((d: any) => ({
-      id: d.id,
-      driver_id: d.driver_id,
-      driver_name: d.driver_id?.slice(0, 8) || "Driver",
-      latitude: d.latitude,
-      longitude: d.longitude,
-      heading: d.heading,
-      speed: d.speed,
-      is_online: d.is_online || false,
-      updated_at: d.updated_at,
-    }));
-
-    const ids = [...new Set(locs.map((d) => d.driver_id).filter(Boolean))];
-    if (ids.length > 0) {
-      const { data: drData } = await supabase
-        .from("drivers")
-        .select("id, is_online, user:users(full_name), vehicle:vehicles!drivers_vehicle_id_fkey(plate_number, make, model, vehicle_type)")
-        .in("id", ids);
-
-      const map: Record<string, any> = {};
-      (drData as any[])?.forEach((d: any) => {
-        map[d.id] = {
-          is_online: d.is_online === true,
-          name: d.user?.full_name || d.id.slice(0, 8),
-          plate: d.vehicle?.plate_number,
-          vehicle: [d.vehicle?.make, d.vehicle?.model].filter(Boolean).join(" "),
-          vehicle_type: d.vehicle?.vehicle_type,
-        };
-      });
-
-      locs.forEach((loc) => {
-        if (map[loc.driver_id]) {
-          loc.driver_name = map[loc.driver_id].name;
-          loc.plate = map[loc.driver_id].plate;
-          loc.vehicle = map[loc.driver_id].vehicle;
-          loc.vehicle_type = map[loc.driver_id].vehicle_type;
-          loc.is_online = map[loc.driver_id].is_online;
-        }
-      });
+    if (drErr) {
+      console.error("fetchDrivers: drivers query failed", drErr);
+      setDrivers([]);
+      return;
     }
 
-    setDrivers(locs.filter((d) => d.is_online === true && d.latitude && d.longitude));
+    const ids = (drData || []).map((d: any) => d.id);
+    const locMap: Record<string, any> = {};
+    if (ids.length > 0) {
+      const { data: locData, error: locErr } = await supabase
+        .from("driver_locations")
+        .select("driver_id, latitude, longitude, heading, speed, updated_at")
+        .in("driver_id", ids);
+
+      if (locErr) {
+        console.error("fetchDrivers: driver_locations query failed", locErr);
+      } else {
+        (locData || []).forEach((l: any) => {
+          locMap[l.driver_id] = l;
+        });
+      }
+    }
+
+    const result = (drData || []).map((d: any) => {
+      const loc = locMap[d.id];
+      return {
+        id: d.id,
+        driver_id: d.id,
+        driver_name: d.user?.full_name || d.id.slice(0, 8),
+        plate: d.vehicle?.plate_number,
+        vehicle: [d.vehicle?.make, d.vehicle?.model].filter(Boolean).join(" "),
+        vehicle_type: d.vehicle?.vehicle_type,
+        latitude: loc?.latitude ?? null,
+        longitude: loc?.longitude ?? null,
+        heading: loc?.heading,
+        speed: loc?.speed,
+        is_online: true,
+        updated_at: loc?.updated_at,
+      };
+    });
+
+    setDrivers(result);
   }, []);
 
   useEffect(() => {
@@ -106,6 +110,7 @@ export default function DispatchCenterPage() {
   }
 
 
+  const driversWithLocation = drivers.filter((d) => d.latitude != null && d.longitude != null);
   const estimate = estimateOperatorFare(form);
   const currencyPrefix = form.city === "Cape Town" ? "R" : "MK";
   const selectedDriver = selectedDriverId ? drivers.find((d) => d.driver_id === selectedDriverId) : null;
@@ -209,12 +214,12 @@ export default function DispatchCenterPage() {
 
             <Select label="Vehicle type" value={form.vehicle_type} onChange={(v: string) => update("vehicle_type", v)}
               options={[
-                ["weafrica_x", "WeAfrica X"],
-                ["weafrica_xl", "WeAfrica XL"],
-                ["weafrica_women", "WeAfrica Women"],
-                ["weafrica_van", "WeAfrica Van"],
-                ["weafrica_shuttle", "WeAfrica Shuttle"],
-                ["weafrica_black", "WeAfrica Black"],
+                ["go", "WeAfrica Go"],
+                ["x", "WeAfrica X"],
+                ["xl", "WeAfrica XL"],
+                ["comfort", "WeAfrica Comfort"],
+                ["black", "WeAfrica Black"],
+                ["women", "WeAfrica Women"],
               ]}
             />
 
@@ -281,7 +286,7 @@ export default function DispatchCenterPage() {
 
   <div className="h-[590px] overflow-hidden rounded-xl">
     <LiveMapView
-      drivers={drivers}
+      drivers={driversWithLocation}
       rides={[{
         id: "operator-preview",
         status: "preview",

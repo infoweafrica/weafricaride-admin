@@ -28,8 +28,9 @@ export default function Pagination({
 }: PaginationProps) {
   if (totalPages <= 1 && totalCount <= pageSize) return null;
 
-  const start = Math.max(0, (page - 1) * pageSize + (totalCount > 0 ? 1 : 0));
-  const end = Math.min(page * pageSize, totalCount);
+  const safeTotal = totalCount ?? 0;
+  const start = safeTotal > 0 ? (page - 1) * pageSize + 1 : 0;
+  const end = Math.min(page * pageSize, safeTotal);
 
   // Generate page numbers to display
   const getPageNumbers = (): (number | "ellipsis")[] => {
@@ -74,7 +75,7 @@ export default function Pagination({
         {" "}-{" "}
         <span className="font-medium text-gray-700">{end}</span>
         {" "}of{" "}
-        <span className="font-medium text-gray-700">{totalCount.toLocaleString()}</span>
+        <span className="font-medium text-gray-700">{String(safeTotal)}</span>
         {" "}results
       </div>
 

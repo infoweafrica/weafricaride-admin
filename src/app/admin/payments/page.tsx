@@ -45,7 +45,25 @@ export default function PaymentsPage() {
 
   const handleRefund = async () => {
     if (!selectedPayment) return;
-    try { await supabase.from("payments").update({ payment_status: "refunded", refund_reason: refundReason, refund_amount: selectedPayment.amount, refunded_at: new Date().toISOString() }).eq("id", selectedPayment.id); fetchData(); setShowRefund(false); setRefundReason(""); } catch {}
+    try {
+      const { data: refund, error: createError } = await supabase
+        .rpc("admin_create_refund", { p_payment_id: selectedPayment.id, p_reason: refundReason })
+        .single();
+      if (createError) throw createError;
+      const refundId = (refund as { refund_id?: string } | null)?.refund_id;
+      if (!refundId) throw new Error("Refund creation did not return an id");
+      const { error: processError } = await supabase.rpc("admin_process_refund", {
+        p_refund_id: refundId,
+        p_status: "approved",
+        p_admin_notes: refundReason,
+      });
+      if (processError) throw processError;
+      fetchData();
+      setShowRefund(false);
+      setRefundReason("");
+    } catch (err) {
+      console.error("Refund failed:", err);
+    }
   };
 
   const totalRevenue = payments.filter(p => p.payment_status === "completed").reduce((sum, p) => sum + p.amount, 0);

@@ -7,6 +7,7 @@ export default function PromoCodesPage() {
     { id: "1", code: "WELCOME50", type: "percentage", value: 50, maxDiscount: 2000, minRide: 500, usageLimit: 100, used: 45, isActive: true, expires: "2026-12-31", isFirstRide: true },
     { id: "2", code: "SAVE2000", type: "fixed", value: 2000, maxDiscount: 2000, minRide: 5000, usageLimit: 200, used: 89, isActive: true, expires: "2026-08-15", isFirstRide: false },
     { id: "3", code: "WEEKEND10", type: "percentage", value: 10, maxDiscount: 500, minRide: 1000, usageLimit: 500, used: 120, isActive: true, expires: "2026-06-30", isFirstRide: false },
+    { id: "4", code: "REFER1000", type: "fixed", value: 1000, maxDiscount: 1000, minRide: 0, usageLimit: 1000, used: 234, isActive: false, expires: "2026-05-01", isFirstRide: false },
   ]);
 
   return (

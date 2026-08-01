@@ -30,9 +30,6 @@ import {
   Car,
   Camera,
   User,
-  Pencil,
-  Trash2,
-  UserPlus,
 } from "lucide-react";
 import { formatCurrency, timeAgo, getStatusColor, getApprovalStatusLabel } from "@/lib/utils";
 import type { Driver } from "@/lib/types";
@@ -41,7 +38,6 @@ import {
   approveDriver,
   rejectDriver,
   suspendDriver,
-  deleteDriver,
   forceDriverOffline,
   fetchTotalDriversCount,
   fetchActiveDriversCount,
@@ -124,142 +120,12 @@ function DriversContent() {
   const [showDetail, setShowDetail] = useState(false);
   const [showReject, setShowReject] = useState(false);
   const [showSuspend, setShowSuspend] = useState(false);
-  const [showDelete, setShowDelete] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
-  const [showAddDriver, setShowAddDriver] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [suspendReason, setSuspendReason] = useState("");
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  // Edit form state
-  const [editFullName, setEditFullName] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editAddress, setEditAddress] = useState("");
-  const [editCanGoOnline, setEditCanGoOnline] = useState(false);
-  const [editPlateNumber, setEditPlateNumber] = useState("");
-  const [editVehicleMake, setEditVehicleMake] = useState("");
-  const [editVehicleModel, setEditVehicleModel] = useState("");
-  const [editVehicleYear, setEditVehicleYear] = useState("");
-  const [editVehicleColor, setEditVehicleColor] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editSuccess, setEditSuccess] = useState<string | null>(null);
-  const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
-  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
-  const [editCurrentAvatar, setEditCurrentAvatar] = useState<string | null>(null);
-  const [editUploading, setEditUploading] = useState(false);
-  const [editLicenseFile, setEditLicenseFile] = useState<File | null>(null);
-  const [editVehicleRegFile, setEditVehicleRegFile] = useState<File | null>(null);
-  const [editInsuranceFile, setEditInsuranceFile] = useState<File | null>(null);
 
   // Detail sub-tab
   const [detailTab, setDetailTab] = useState<"details" | "documents" | "rides" | "wallet">("details");
-
-  // Add Driver form
-  const [newDriverName, setNewDriverName] = useState("");
-  const [newDriverEmail, setNewDriverEmail] = useState("");
-  const [newDriverPhone, setNewDriverPhone] = useState("");
-  const [newDriverPassword, setNewDriverPassword] = useState("");
-  const [newDriverPlate, setNewDriverPlate] = useState("");
-  const [newDriverMake, setNewDriverMake] = useState("");
-  const [newDriverModel, setNewDriverModel] = useState("");
-  const [newDriverYear, setNewDriverYear] = useState(new Date().getFullYear().toString());
-  const [newDriverColor, setNewDriverColor] = useState("White");
-  const [newDriverType, setNewDriverType] = useState("economy");
-  const [addDriverLoading, setAddDriverLoading] = useState(false);
-  const [addDriverError, setAddDriverError] = useState<string | null>(null);
-
-  const handleAddDriver = async () => {
-    if (!newDriverName.trim() || !newDriverPhone.trim()) return;
-    setAddDriverLoading(true);
-    setAddDriverError(null);
-    try {
-      // 1. Create user in users table (no Firebase auth needed for admin-created drivers)
-      const { data: userData, error: userErr } = await supabase
-        .from("users")
-        .insert({
-          full_name: newDriverName.trim(),
-          email: newDriverEmail.trim() || null,
-          phone: newDriverPhone.trim(),
-          is_active: true,
-        })
-        .select("id")
-        .single();
-
-      if (userErr) throw new Error("Failed to create user: " + userErr.message);
-      const userId = userData.id;
-
-      // 2. Create driver record
-      const { data: driverData, error: driverErr } = await supabase
-        .from("drivers")
-        .insert({
-          user_id: userId,
-          approval_status: "approved",
-          is_online: false,
-          is_approved: true,
-          can_go_online: true,
-          driver_tier: "starter",
-          total_rides: 0,
-          total_earnings: 0,
-          rating: 5.0,
-        })
-        .select("id")
-        .single();
-
-      if (driverErr) throw new Error("Failed to create driver: " + driverErr.message);
-      const driverId = driverData.id;
-
-      // 3. Create vehicle if plate provided
-      if (newDriverPlate.trim()) {
-        const { data: vehicleData, error: vehicleErr } = await supabase
-          .from("vehicles")
-          .insert({
-            driver_id: driverId,
-            vehicle_type: newDriverType,
-            plate_number: newDriverPlate.trim(),
-            make: newDriverMake.trim() || null,
-            model: newDriverModel.trim() || null,
-            year: parseInt(newDriverYear) || new Date().getFullYear(),
-            color: newDriverColor,
-            is_active: true,
-          })
-          .select("id")
-          .single();
-
-        if (vehicleErr) throw new Error("Failed to create vehicle: " + vehicleErr.message);
-
-        // Link vehicle to driver
-        await supabase.from("drivers").update({ vehicle_id: vehicleData.id }).eq("id", driverId);
-      }
-
-      // 4. Create driver wallet
-      await supabase.from("driver_wallets").insert({
-        driver_id: driverId,
-        available_balance: 0,
-        pending_balance: 0,
-        cash_collected: 0,
-        total_earned: 0,
-      });
-
-      setShowAddDriver(false);
-      resetAddDriverForm();
-      loadData();
-    } catch (e: any) {
-      setAddDriverError(e?.message || "Failed to add driver");
-    } finally {
-      setAddDriverLoading(false);
-    }
-  };
-
-  const resetAddDriverForm = () => {
-    setNewDriverName(""); setNewDriverEmail(""); setNewDriverPhone("");
-    setNewDriverPassword(""); setNewDriverPlate(""); setNewDriverMake("");
-    setNewDriverModel(""); setNewDriverYear(new Date().getFullYear().toString());
-    setNewDriverColor("White"); setNewDriverType("economy");
-    setAddDriverError(null);
-  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -367,210 +233,6 @@ function DriversContent() {
     setActionLoading(null);
   };
 
-  const openDeleteModal = () => {
-    setDeleteConfirmText("");
-    setShowDelete(true);
-  };
-
-  const handleDelete = async () => {
-    if (!selectedDriver || deleteConfirmText !== "DELETE") return;
-    setActionLoading(selectedDriver.id);
-
-    try {
-      const driverId = selectedDriver.id;
-      const userId = selectedDriver.user_id as string;
-
-      // 1. Unlink vehicle (set driver_id to NULL instead of deleting vehicle)
-      await supabase.from("vehicles").update({ driver_id: null }).eq("driver_id", driverId);
-      // Also unlink from drivers.vehicle_id
-      await supabase.from("drivers").update({ vehicle_id: null }).eq("id", driverId);
-
-      // 2. Delete child records
-      await supabase.from("driver_locations").delete().eq("driver_id", driverId);
-      await supabase.from("driver_wallets").delete().eq("driver_id", driverId);
-      await supabase.from("driver_settings").delete().eq("driver_id", driverId);
-      await supabase.from("driver_performance").delete().eq("driver_id", driverId);
-      await supabase.from("driver_mission_progress").delete().eq("driver_id", driverId);
-      await supabase.from("driver_achievement_unlocks").delete().eq("driver_id", driverId);
-      await supabase.from("driver_safety_contacts").delete().eq("driver_id", driverId);
-      await supabase.from("driver_transactions").delete().eq("driver_id", driverId);
-      await supabase.from("driver_payouts").delete().eq("driver_id", driverId);
-
-      // 3. Null-out rides referencing this driver
-      await supabase.from("rides").update({ driver_id: null }).eq("driver_id", driverId);
-
-      // 4. Delete driver record
-      const { error: delErr } = await supabase.from("drivers").delete().eq("id", driverId);
-      if (delErr) { alert("Failed to delete driver: " + delErr.message); setActionLoading(null); return; }
-
-      loadData();
-      setShowDelete(false);
-      setShowDetail(false);
-    } catch (e: any) {
-      alert("Error deleting driver: " + (e?.message || e?.toString() || "Unknown error"));
-    }
-    setActionLoading(null);
-  };
-
-  const handleEdit = () => {
-    if (!selectedDriver) return;
-    const d = selectedDriver;
-    setEditFullName(d.user?.full_name || "");
-    setEditPhone(d.user?.phone || "");
-    setEditEmail(d.user?.email || "");
-    setEditAddress(d.address || "");
-    setEditCanGoOnline(d.can_go_online || false);
-    setEditPlateNumber(d.vehicle?.plate_number || "");
-    setEditVehicleMake(d.vehicle?.make || "");
-    setEditVehicleModel(d.vehicle?.model || "");
-    setEditVehicleYear(String(d.vehicle?.year || ""));
-    setEditVehicleColor(d.vehicle?.color || "");
-    setEditError(null);
-    setEditSuccess(null);
-    setEditAvatarFile(null);
-    setEditAvatarPreview(null);
-    setEditCurrentAvatar(d.avatar_url || d.user?.avatar_url || null);
-    setEditUploading(false);
-    setEditLicenseFile(null);
-    setEditVehicleRegFile(null);
-    setEditInsuranceFile(null);
-    setShowEdit(true);
-  };
-
-  async function handleSaveEdit() {
-    if (!selectedDriver) return;
-    setEditSaving(true);
-    setEditError(null);
-    setEditSuccess(null);
-
-    try {
-      const driverId = selectedDriver.id;
-      const userId = (selectedDriver as unknown as Record<string, unknown>)?.user_id as string || selectedDriver.user_id as string;
-      const vehicleId = (selectedDriver as unknown as Record<string, unknown>)?.vehicle_id as string;
-
-      // Upload profile picture if a file was selected
-      let avatarUrl = editCurrentAvatar;
-      if (editAvatarFile && userId) {
-        setEditUploading(true);
-        const fileExt = editAvatarFile.name.split('.').pop();
-        const filePath = `${userId}/profile.${fileExt}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('driver-profile-photos')
-          .upload(filePath, editAvatarFile, { upsert: true, contentType: editAvatarFile.type });
-
-        if (!uploadError && uploadData) {
-          const { data: urlData } = supabase.storage
-            .from('driver-profile-photos')
-            .getPublicUrl(filePath);
-          avatarUrl = urlData.publicUrl;
-        }
-        setEditUploading(false);
-      }
-
-      // Upload license document if selected
-      let licenseUrl = selectedDriver.license_document_url || null;
-      if (editLicenseFile && driverId) {
-        const fileExt = editLicenseFile.name.split('.').pop();
-        const filePath = `licenses/${driverId}.${fileExt}`;
-        const { data: upData, error: upErr } = await supabase.storage
-          .from('driver-documents')
-          .upload(filePath, editLicenseFile, { upsert: true, contentType: editLicenseFile.type });
-        if (!upErr && upData) {
-          const { data: urlData } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-          licenseUrl = urlData.publicUrl;
-        }
-      }
-
-      // Upload vehicle registration if selected
-      let vehicleRegUrl = selectedDriver.vehicle_registration_url || null;
-      if (editVehicleRegFile && driverId) {
-        const fileExt = editVehicleRegFile.name.split('.').pop();
-        const filePath = `registrations/${driverId}.${fileExt}`;
-        const { data: upData, error: upErr } = await supabase.storage
-          .from('driver-documents')
-          .upload(filePath, editVehicleRegFile, { upsert: true, contentType: editVehicleRegFile.type });
-        if (!upErr && upData) {
-          const { data: urlData } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-          vehicleRegUrl = urlData.publicUrl;
-        }
-      }
-
-      // Upload insurance if selected
-      let insuranceUrl = selectedDriver.insurance_document_url || null;
-      if (editInsuranceFile && driverId) {
-        const fileExt = editInsuranceFile.name.split('.').pop();
-        const filePath = `insurance/${driverId}.${fileExt}`;
-        const { data: upData, error: upErr } = await supabase.storage
-          .from('driver-documents')
-          .upload(filePath, editInsuranceFile, { upsert: true, contentType: editInsuranceFile.type });
-        if (!upErr && upData) {
-          const { data: urlData } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-          insuranceUrl = urlData.publicUrl;
-        }
-      }
-
-      // Update users table via supabase
-      if (userId && (editFullName || editPhone || editEmail)) {
-        const updates: Record<string, string> = {};
-        if (editFullName) updates.full_name = editFullName;
-        if (editPhone) updates.phone = editPhone;
-        if (editEmail) updates.email = editEmail;
-        updates.updated_at = new Date().toISOString();
-        if (avatarUrl) updates.avatar_url = avatarUrl;
-        await supabase.from("users").update(updates).eq("id", userId);
-      }
-
-      // Update drivers table
-      const driverUpdates: Record<string, unknown> = {
-        address: editAddress,
-        can_go_online: editCanGoOnline,
-        updated_at: new Date().toISOString(),
-      };
-      if (licenseUrl) driverUpdates.license_document_url = licenseUrl;
-      if (vehicleRegUrl) driverUpdates.vehicle_registration_url = vehicleRegUrl;
-      if (insuranceUrl) driverUpdates.insurance_document_url = insuranceUrl;
-      await supabase.from("drivers").update(driverUpdates).eq("id", driverId);
-
-      // Update or create vehicle
-      if (editPlateNumber.trim()) {
-        if (vehicleId) {
-          await supabase.from("vehicles").update({
-            plate_number: editPlateNumber,
-            make: editVehicleMake,
-            model: editVehicleModel,
-            year: editVehicleYear ? parseInt(editVehicleYear) : null,
-            color: editVehicleColor,
-            updated_at: new Date().toISOString(),
-          }).eq("id", vehicleId);
-        } else {
-          const { data: newV } = await supabase.from("vehicles").insert({
-            driver_id: driverId,
-            vehicle_type: "economy",
-            plate_number: editPlateNumber,
-            make: editVehicleMake,
-            model: editVehicleModel,
-            year: editVehicleYear ? parseInt(editVehicleYear) : null,
-            color: editVehicleColor,
-          }).select("id").single();
-          if (newV) {
-            await supabase.from("drivers").update({ vehicle_id: newV.id }).eq("id", driverId);
-          }
-        }
-      }
-
-      setEditSuccess("Driver updated successfully");
-      loadData();
-      setTimeout(() => {
-        setShowEdit(false);
-        setEditSuccess(null);
-      }, 1200);
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setEditSaving(false);
-    }
-  }
-
   // Live map driver locations from driver_locations table (real-time)
   const [liveLocations, setLiveLocations] = useState<DriverLocation[]>([]);
 
@@ -608,28 +270,15 @@ function DriversContent() {
           .limit(200);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mapped = ((data as any[]) || []).map((d: any) => mapDriverLocation(d));
-        // Enrich with driver names from drivers+users table
-        const driverIds = [...new Set(mapped.map((d: DriverLocation) => d.driver_id).filter(Boolean))];
-        if (driverIds.length > 0) {
-          try {
-            const { data: driverData } = await supabase
-              .from("drivers")
-              .select("id, user:users(full_name)")
-              .in("id", driverIds);
-            const nameMap: Record<string, string> = {};
-            (driverData as any[])?.forEach((d: any) => {
-              nameMap[d.id] = d.user?.full_name || d.id.slice(0, 8);
-            });
-            setLiveLocations(mapped.map((d: DriverLocation) => ({
-              ...d,
-              driver_name: nameMap[d.driver_id] || d.driver_name,
-            })));
-          } catch {
-            setLiveLocations(mapped);
-          }
-        } else {
-          setLiveLocations(mapped);
-        }
+        // Enrich with driver names from existing drivers list
+        const nameMap: Record<string, string> = {};
+        drivers.forEach((d) => {
+          if (d.id && d.user?.full_name) nameMap[d.id] = d.user.full_name;
+        });
+        setLiveLocations(mapped.map((d: DriverLocation) => ({
+          ...d,
+          driver_name: nameMap[d.driver_id] || d.driver_name,
+        })));
       } catch {
         // silently ignore
       }
@@ -655,36 +304,24 @@ function DriversContent() {
 
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
             const mapped = mapDriverLocation(newRow);
-            // Enrich with driver name from DB
-            try {
-              const { data: driverData } = await supabase
-                .from("drivers")
-                .select("id, user:users(full_name)")
-                .eq("id", mapped.driver_id)
-                .maybeSingle();
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const fullName = (driverData as any)?.user?.full_name;
-              const enriched = { ...mapped, driver_name: fullName || mapped.driver_name };
-              setLiveLocations((prev) => {
-                const idx = prev.findIndex((d) => d.id === enriched.id);
-                if (idx >= 0) {
-                  const copy = [...prev];
-                  copy[idx] = enriched;
-                  return copy;
+            // Try to get driver name from existing drivers list
+            const nameMap: Record<string, string> = {};
+            setLiveLocations((prev) => {
+              // Build name map from current state
+              prev.forEach((d) => {
+                if (d.driver_name && !d.driver_name.startsWith("Driver ")) {
+                  nameMap[d.driver_id] = d.driver_name;
                 }
-                return [...prev, enriched];
               });
-            } catch {
-              setLiveLocations((prev) => {
-                const idx = prev.findIndex((d) => d.id === mapped.id);
-                if (idx >= 0) {
-                  const copy = [...prev];
-                  copy[idx] = mapped;
-                  return copy;
-                }
-                return [...prev, mapped];
-              });
-            }
+              const enriched = { ...mapped, driver_name: nameMap[mapped.driver_id] || mapped.driver_name };
+              const idx = prev.findIndex((d) => d.id === enriched.id);
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = enriched;
+                return copy;
+              }
+              return [...prev, enriched];
+            });
           }
         }
       )
@@ -716,21 +353,13 @@ function DriversContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div>
           <h1 className="text-2xl font-bold text-gray-900">Drivers</h1>
           <p className="text-gray-500 mt-1">
             {selectedCityName === "All Cities"
               ? `${totalDrivers.toLocaleString()} registered drivers`
               : `${totalDrivers.toLocaleString()} drivers in ${selectedCityName}`}
           </p>
-        </div>
-        <button
-          onClick={() => setShowAddDriver(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 shadow-sm shadow-green-200 transition-colors"
-        >
-          <UserPlus className="h-4 w-4" /> Add Driver
-        </button>
       </div>
 
       <ApiErrorDisplay error={error} onRetry={loadData} />
@@ -850,12 +479,8 @@ function DriversContent() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                               <div className="relative">
-                                <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-medium overflow-hidden bg-purple-600">
-                                  {driver.user?.avatar_url ? (
-                                    <img src={driver.user.avatar_url as string} alt="" className="h-full w-full object-cover" />
-                                  ) : (
-                                    <span>{driver.user?.full_name?.charAt(0) || "D"}</span>
-                                  )}
+                                <div className="h-9 w-9 bg-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                  {driver.user?.full_name?.charAt(0) || "D"}
                                 </div>
                                 <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white ${driver.is_online ? "bg-green-500" : "bg-gray-400"}`} />
                               </div>
@@ -1020,8 +645,6 @@ function DriversContent() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={handleEdit} className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-purple-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>
-                <button onClick={openDeleteModal} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-red-700"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
                 {selectedDriver.approval_status === "pending" && <><button onClick={() => handleApprove(selectedDriver.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">Approve</button><button onClick={() => setShowReject(true)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium">Reject</button></>}
                 {selectedDriver.approval_status === "approved" && <><button onClick={() => setShowSuspend(true)} className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-medium">Suspend</button><button onClick={() => handleForceOffline(selectedDriver.id)} className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium">Force Offline</button></>}
                 <button onClick={() => setShowDetail(false)} className="p-1 hover:bg-gray-100 rounded"><X className="h-5 w-5" /></button>
@@ -1112,226 +735,6 @@ function DriversContent() {
         </div>
       )}
 
-      {/* Delete Modal */}
-      {showDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-md mx-4 p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-red-600">Delete Driver</h2>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
-              <p className="font-medium">⚠️ This action cannot be undone.</p>
-              <p className="mt-1 text-xs text-red-600">
-                This will permanently remove <strong>{selectedDriver?.user?.full_name}</strong>'s account, 
-                vehicle, wallet, ride history, and all associated data.
-              </p>
-            </div>
-            <p className="text-sm text-gray-600">
-              Type <strong className="text-red-600">DELETE</strong> to confirm:
-            </p>
-            <input
-              type="text"
-              placeholder="Type DELETE to confirm"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-            <div className="flex gap-2">
-              <button onClick={() => setShowDelete(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button>
-              <button
-                onClick={handleDelete}
-                disabled={deleteConfirmText !== "DELETE"}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm disabled:opacity-50"
-              >
-                Delete Account
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal */}
-      {showEdit && selectedDriver && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">Edit Driver</h2>
-              <button onClick={() => setShowEdit(false)} className="p-1 hover:bg-gray-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-
-            {editError && (
-              <div className="mx-5 mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{editError}</div>
-            )}
-            {editSuccess && (
-              <div className="mx-5 mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">{editSuccess}</div>
-            )}
-
-            <div className="p-5 space-y-4">
-              {/* Account Section */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Account Information</h3>
-                <div className="space-y-3">
-                  {/* Profile Picture */}
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <div className="h-16 w-16 rounded-full bg-purple-100 flex items-center justify-center overflow-hidden border-2 border-purple-200">
-                        {editAvatarPreview ? (
-                          <img src={editAvatarPreview} alt="Preview" className="h-full w-full object-cover" />
-                        ) : editCurrentAvatar ? (
-                          <img src={editCurrentAvatar} alt="Current" className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="text-purple-600 text-xl font-bold">{editFullName?.charAt(0) || "D"}</span>
-                        )}
-                      </div>
-                      {editUploading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-full">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-600"></div>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="cursor-pointer px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-medium transition-colors">
-                        Change Photo
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setEditAvatarFile(file);
-                              const reader = new FileReader();
-                              reader.onload = () => setEditAvatarPreview(reader.result as string);
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </label>
-                      {editAvatarFile && (
-                        <button
-                          onClick={() => { setEditAvatarFile(null); setEditAvatarPreview(null); }}
-                          className="ml-2 text-xs text-red-500 hover:text-red-700"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
-                    <input type="text" value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                      <input type="text" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                      <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
-                    <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={editCanGoOnline} onChange={(e) => setEditCanGoOnline(e.target.checked)} className="rounded border-gray-300 text-green-600" />
-                    Can go online
-                  </label>
-                </div>
-              </div>
-
-              {/* Documents Section */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Documents</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Driver License</label>
-                    <div className="flex items-center gap-3">
-                      <label className="cursor-pointer px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition-colors">
-                        {editLicenseFile ? editLicenseFile.name : 'Upload License'}
-                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => setEditLicenseFile(e.target.files?.[0] || null)} />
-                      </label>
-                      {editLicenseFile && (
-                        <button onClick={() => setEditLicenseFile(null)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                      )}
-                      {(selectedDriver.license_document_url) && !editLicenseFile && (
-                        <a href={selectedDriver.license_document_url} target="_blank" className="text-xs text-blue-600 underline">View current</a>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Registration</label>
-                    <div className="flex items-center gap-3">
-                      <label className="cursor-pointer px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition-colors">
-                        {editVehicleRegFile ? editVehicleRegFile.name : 'Upload Registration'}
-                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => setEditVehicleRegFile(e.target.files?.[0] || null)} />
-                      </label>
-                      {editVehicleRegFile && (
-                        <button onClick={() => setEditVehicleRegFile(null)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                      )}
-                      {(selectedDriver.vehicle_registration_url) && !editVehicleRegFile && (
-                        <a href={selectedDriver.vehicle_registration_url} target="_blank" className="text-xs text-blue-600 underline">View current</a>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Document</label>
-                    <div className="flex items-center gap-3">
-                      <label className="cursor-pointer px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition-colors">
-                        {editInsuranceFile ? editInsuranceFile.name : 'Upload Insurance'}
-                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => setEditInsuranceFile(e.target.files?.[0] || null)} />
-                      </label>
-                      {editInsuranceFile && (
-                        <button onClick={() => setEditInsuranceFile(null)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                      )}
-                      {(selectedDriver.insurance_document_url) && !editInsuranceFile && (
-                        <a href={selectedDriver.insurance_document_url} target="_blank" className="text-xs text-blue-600 underline">View current</a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Vehicle Section */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Vehicle Information</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Plate Number</label>
-                    <input type="text" value={editPlateNumber} onChange={(e) => setEditPlateNumber(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Make</label>
-                      <input type="text" value={editVehicleMake} onChange={(e) => setEditVehicleMake(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Model</label>
-                      <input type="text" value={editVehicleModel} onChange={(e) => setEditVehicleModel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Year</label>
-                      <input type="number" value={editVehicleYear} onChange={(e) => setEditVehicleYear(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Color</label>
-                      <input type="text" value={editVehicleColor} onChange={(e) => setEditVehicleColor(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 p-5 border-t">
-              <button onClick={() => setShowEdit(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSaveEdit} disabled={editSaving} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">{editSaving ? "Saving..." : "Save Changes"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Suspend Modal */}
       {showSuspend && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1340,85 +743,6 @@ function DriversContent() {
             <p className="text-sm">Suspend <strong>{selectedDriver?.user?.full_name}</strong>?</p>
             <textarea value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} placeholder="Reason..." rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
             <div className="flex gap-2"><button onClick={() => setShowSuspend(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleSuspend} className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm">Suspend</button></div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Driver Modal */}
-      {showAddDriver && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Add New Driver</h2>
-              <button onClick={() => { setShowAddDriver(false); resetAddDriverForm(); }} className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
-            </div>
-
-            {addDriverError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{addDriverError}</div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Driver Information</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Full Name *</label>
-                    <input type="text" value={newDriverName} onChange={e => setNewDriverName(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Phone *</label>
-                    <input type="text" value={newDriverPhone} onChange={e => setNewDriverPhone(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Email</label>
-                    <input type="email" value={newDriverEmail} onChange={e => setNewDriverEmail(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Vehicle (Optional)</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Plate Number</label>
-                    <input type="text" value={newDriverPlate} onChange={e => setNewDriverPlate(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Type</label>
-                    <select value={newDriverType} onChange={e => setNewDriverType(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm bg-white">
-                      <option value="economy">WeAfrica X</option>
-                      <option value="comfort">WeAfrica Comfort</option>
-                      <option value="xl">WeAfrica XL</option>
-                      <option value="boda">WeAfrica Boda</option>
-                      <option value="luxury">WeAfrica Black</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Make</label>
-                    <input type="text" value={newDriverMake} onChange={e => setNewDriverMake(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Model</label>
-                    <input type="text" value={newDriverModel} onChange={e => setNewDriverModel(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Year</label>
-                    <input type="number" value={newDriverYear} onChange={e => setNewDriverYear(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1.5">Color</label>
-                    <input type="text" value={newDriverColor} onChange={e => setNewDriverColor(e.target.value)} className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => { setShowAddDriver(false); resetAddDriverForm(); }} className="flex-1 h-11 border border-gray-200 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleAddDriver} disabled={addDriverLoading || !newDriverName.trim() || !newDriverPhone.trim()} className="flex-1 h-11 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                {addDriverLoading ? "Adding..." : "Add Driver"}
-              </button>
-            </div>
           </div>
         </div>
       )}
