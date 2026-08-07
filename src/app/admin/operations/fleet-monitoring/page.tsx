@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import { RefreshCw, Users, Car, Wifi, WifiOff, Clock } from "lucide-react";
 import Link from "next/link";
 
@@ -36,124 +35,13 @@ export default function FleetMonitoringPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: driverData, error } = await supabase
-        .from("drivers")
-        .select("id, status, is_online, city, vehicle_id, user:users(full_name, phone)")
-        .order("created_at", { ascending: false })
-        .limit(200);
-
-      if (error) {
-        console.error("drivers query error", JSON.stringify(error, null, 2));
-        throw error;
-      }
-
-      const driverIds = (driverData || []).map((d: any) => d.id).filter(Boolean);
-
-      const vehicleIds = [...new Set((driverData || []).map((d: any) => d.vehicle_id).filter(Boolean))];
-      const { data: vehicleData } = vehicleIds.length
-        ? await supabase
-            .from("vehicles")
-            .select("id, plate_number, make, model, vehicle_type")
-            .in("id", vehicleIds)
-        : { data: [] as any[] };
-
-      const vehicleMap: Record<string, any> = {};
-      (vehicleData as any[] || []).forEach((v: any) => {
-        vehicleMap[v.id] = v;
-      });
-
-
-      const { data: locData, error: locError } = driverIds.length
-        ? await supabase
-            .from("driver_locations")
-            .select("driver_id, is_online, updated_at, latitude, longitude")
-            .in("driver_id", driverIds)
-        : { data: [] as any[], error: null };
-
-      if (locError) {
-        console.error("driver_locations query error", JSON.stringify(locError, null, 2));
-        throw locError;
-      }
-
-      const locationMap: Record<string, any> = {};
-      (locData as any[] || []).forEach((loc: any) => {
-        locationMap[loc.driver_id] = loc;
-      });
-
-      const activeStatuses = ["accepted", "driver_arriving", "driver_arrived", "arrived", "in_progress"];
-      const { data: activeRideData, error: activeRideError } = driverIds.length
-        ? await supabase
-            .from("rides")
-            .select("id, driver_id, status")
-            .in("driver_id", driverIds)
-            .in("status", activeStatuses)
-        : { data: [] as any[], error: null };
-
-      if (activeRideError) {
-        console.error("active rides query error", JSON.stringify(activeRideError, null, 2));
-        throw activeRideError;
-      }
-
-      const activeRideMap: Record<string, any> = {};
-      (activeRideData as any[] || []).forEach((ride: any) => {
-        if (ride.driver_id) activeRideMap[ride.driver_id] = ride;
-      });
-
-      const now = new Date();
-      let onlineCount = 0;
-      let offlineCount = 0;
-      let busyCount = 0;
-      let idleCount = 0;
-
-      const mapped = (driverData || []).map((d: any) => {
-        const loc = locationMap[d.id];
-        const liveOnline = loc?.is_online === true;
-        const profileOnline = d.is_online === true;
-        const activeRide = activeRideMap[d.id];
-        const lastSeenValue = loc?.updated_at || "";
-        const lastSeen = lastSeenValue ? new Date(lastSeenValue) : null;
-        const minutesAgo = lastSeen ? Math.floor((now.getTime() - lastSeen.getTime()) / 60000) : 999999;
-
-        let driverStatus = "offline";
-        if (activeRide) {
-          driverStatus = "busy";
-          busyCount++;
-        } else if (liveOnline || profileOnline) {
-          driverStatus = "idle";
-          idleCount++;
-          onlineCount++;
-        } else {
-          offlineCount++;
-        }
-
-        const vehicle = vehicleMap[d.vehicle_id];
-        const vehicleLabel = [vehicle?.make, vehicle?.model].filter(Boolean).join(" ");
-
-        return {
-          id: d.id,
-          name: d.user?.full_name || d.id?.slice(0, 8) || "Unknown",
-          phone: d.user?.phone || "",
-          status: driverStatus,
-          last_seen: lastSeenValue,
-          city: d.city || "—",
-          vehicle_type: vehicle?.vehicle_type || d.status || "Standard",
-          vehicle_label: vehicleLabel || "No vehicle",
-          plate: vehicle?.plate_number || "",
-          current_ride_id: activeRide?.id || null,
-          online_duration: minutesAgo < 60 ? `${minutesAgo}m ago` : minutesAgo < 999999 ? `${Math.floor(minutesAgo / 60)}h ago` : "Never",
-        };
-      });
-
-      setDrivers(mapped);
-      setStats({
-        online: onlineCount,
-        offline: offlineCount,
-        busy: busyCount,
-        idle: idleCount,
-        total: mapped.length,
-      });
+      const res = await fetch("/api/drivers/fleet-status");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load fleet data");
+      setDrivers(body.drivers || []);
+      setStats(body.stats || { online: 0, offline: 0, busy: 0, idle: 0, total: 0 });
     } catch (err) {
-      console.error("Failed to load fleet data:", JSON.stringify(err, null, 2), err);
+      console.error("Failed to load fleet data:", err);
       setDrivers([]);
       setStats({ online: 0, offline: 0, busy: 0, idle: 0, total: 0 });
     } finally {

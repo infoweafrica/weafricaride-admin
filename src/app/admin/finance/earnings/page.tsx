@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import { DollarSign, TrendingUp, Wallet, RefreshCw, Search, Download } from "lucide-react";
 import { formatCurrency, timeAgo } from "@/lib/utils";
 
@@ -28,121 +27,11 @@ export default function DriverEarningsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch driver wallets with driver info
-      const { data: walletData, error } = await supabase
-        .from("driver_wallets")
-        .select("*, driver:drivers(id, user:users(full_name, phone))")
-        .order("available_balance", { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-
-      // Fetch today's date boundaries
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-      // Fetch today's completed rides per driver for earnings
-      const { data: todayRides } = await supabase
-        .from("rides")
-        .select("driver_id, fare_amount, commission_amount, driver_earning")
-        .eq("status", "completed")
-        .gte("created_at", todayStart);
-
-      const { data: weekRides } = await supabase
-        .from("rides")
-        .select("driver_id, fare_amount, commission_amount, driver_earning")
-        .eq("status", "completed")
-        .gte("created_at", weekStart);
-
-      const { data: monthRides } = await supabase
-        .from("rides")
-        .select("driver_id, fare_amount, commission_amount, driver_earning")
-        .eq("status", "completed")
-        .gte("created_at", monthStart);
-
-      // Aggregate earnings per driver
-      const todayByDriver: Record<string, number> = {};
-      const weekByDriver: Record<string, number> = {};
-      const monthByDriver: Record<string, number> = {};
-
-      (todayRides || []).forEach((r: any) => {
-        todayByDriver[r.driver_id] = (todayByDriver[r.driver_id] || 0) + (r.driver_earning || r.fare_amount || 0);
-      });
-      (weekRides || []).forEach((r: any) => {
-        weekByDriver[r.driver_id] = (weekByDriver[r.driver_id] || 0) + (r.driver_earning || r.fare_amount || 0);
-      });
-      (monthRides || []).forEach((r: any) => {
-        monthByDriver[r.driver_id] = (monthByDriver[r.driver_id] || 0) + (r.driver_earning || r.fare_amount || 0);
-      });
-
-      // Count trips per driver this month
-      const tripsByDriver: Record<string, number> = {};
-      (monthRides || []).forEach((r: any) => {
-        tripsByDriver[r.driver_id] = (tripsByDriver[r.driver_id] || 0) + 1;
-      });
-
-      if (walletData && walletData.length > 0) {
-        const mapped = walletData.map((w: any) => {
-          const driverObj = w.driver as Record<string, any> | undefined;
-          const userObj = driverObj?.user as Record<string, any> | undefined;
-          const driverId = w.driver_id || driverObj?.id;
-          return {
-            id: w.id,
-            driver_id: driverId,
-            driver_name: userObj?.full_name || "Unknown Driver",
-            driver_phone: userObj?.phone || "",
-            today: todayByDriver[driverId] || 0,
-            this_week: weekByDriver[driverId] || 0,
-            this_month: monthByDriver[driverId] || 0,
-            total_trips: tripsByDriver[driverId] || 0,
-            available_balance: w.available_balance || 0,
-            pending_balance: w.pending_balance || 0,
-            commission_owed: w.commission_owed || 0,
-          };
-        });
-        setEarnings(mapped);
-        setSummary({
-          today: mapped.reduce((s, e) => s + e.today, 0),
-          week: mapped.reduce((s, e) => s + e.this_week, 0),
-          month: mapped.reduce((s, e) => s + e.this_month, 0),
-          pending: mapped.reduce((s, e) => s + e.pending_balance, 0),
-        });
-      } else {
-        // Fallback: get drivers directly
-        const { data: driverData } = await supabase
-          .from("drivers")
-          .select("id, total_earnings, available_balance, pending_balance, user:users(full_name, phone)")
-          .limit(100);
-
-        if (driverData) {
-          const mapped = driverData.map((d: any) => {
-            const userObj = d.user as Record<string, any> | undefined;
-            const driverId = d.id;
-            return {
-              id: driverId,
-              driver_id: driverId,
-              driver_name: userObj?.full_name || "Unknown Driver",
-              driver_phone: userObj?.phone || "",
-              today: todayByDriver[driverId] || 0,
-              this_week: weekByDriver[driverId] || 0,
-              this_month: monthByDriver[driverId] || 0,
-              total_trips: tripsByDriver[driverId] || 0,
-              available_balance: d.available_balance || 0,
-              pending_balance: d.pending_balance || 0,
-              commission_owed: Math.round((d.total_earnings || 0) * 0.15),
-            };
-          });
-          setEarnings(mapped);
-          setSummary({
-            today: mapped.reduce((s, e) => s + e.today, 0),
-            week: mapped.reduce((s, e) => s + e.this_week, 0),
-            month: mapped.reduce((s, e) => s + e.this_month, 0),
-            pending: mapped.reduce((s, e) => s + e.pending_balance, 0),
-          });
-        }
-      }
+      const res = await fetch("/api/drivers/earnings");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load earnings");
+      setEarnings(body.earnings || []);
+      setSummary(body.summary || { today: 0, week: 0, month: 0, pending: 0 });
     } catch (err) {
       console.error("Failed to load earnings:", err);
     } finally {

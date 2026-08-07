@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import { Shield, CheckCircle, XCircle, Clock, Search, RefreshCw } from "lucide-react";
 
 export default function VerificationPage() {
@@ -11,10 +10,10 @@ export default function VerificationPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { count: verified } = await supabase.from("drivers").select("*", { count: "exact", head: true }).eq("onboarding_status", "approved").maybeSingle();
-      const { count: pending } = await supabase.from("drivers").select("*", { count: "exact", head: true }).in("onboarding_status", ["applied", "documents_submitted", "under_review", "interview", "vehicle_inspection"]).maybeSingle();
-      const { count: rejected } = await supabase.from("drivers").select("*", { count: "exact", head: true }).eq("onboarding_status", "rejected").maybeSingle();
-      setStats({ verified: verified || 0, pending: pending || 0, rejected: rejected || 0, expired: 0 });
+      const res = await fetch("/api/drivers/verification-stats");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load verification stats");
+      setStats(body.stats || { verified: 0, pending: 0, rejected: 0, expired: 0 });
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);

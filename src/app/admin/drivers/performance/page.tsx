@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import { Star, TrendingUp, XCircle, CheckCircle, Shield, Search, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
@@ -26,44 +25,10 @@ export default function DriverPerformancePage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch drivers with their ride stats from Supabase
-      const { data: driverData } = await supabase
-        .from("drivers")
-        .select("id, total_trips, total_earnings, rating, available_balance, user:users(full_name, phone)")
-        .limit(100);
-
-      if (driverData && driverData.length > 0) {
-        // For each driver, calculate performance from rides
-        const performanceData: DriverPerformance[] = await Promise.all(
-          driverData.map(async (d: any) => {
-            const userObj = d.user as Record<string, any> | undefined;
-            
-            // Get ride stats for this driver
-            const { data: rideData } = await supabase
-              .from("rides")
-              .select("status")
-              .eq("driver_id", d.id);
-
-            const totalRides = rideData?.length || 0;
-            const completedRides = rideData?.filter((r: any) => r.status === "completed").length || 0;
-            const cancelledRides = rideData?.filter((r: any) => r.status === "cancelled" || r.status === "driver_cancelled").length || 0;
-
-            return {
-              id: d.id,
-              driver_name: userObj?.full_name || "N/A",
-              driver_phone: userObj?.phone || "",
-              total_trips: d.total_trips || totalRides,
-              acceptance_rate: totalRides > 0 ? Math.round(((totalRides - cancelledRides) / totalRides) * 100) : 0,
-              cancellation_rate: totalRides > 0 ? Math.round((cancelledRides / totalRides) * 100) : 0,
-              completion_rate: totalRides > 0 ? Math.round((completedRides / totalRides) * 100) : 0,
-              average_rating: d.rating || 0,
-              safety_score: Math.round((d.rating || 0) * 20), // Convert rating 0-5 to 0-100 scale
-              complaints: 0,
-            };
-          })
-        );
-        setDrivers(performanceData);
-      }
+      const res = await fetch("/api/drivers/performance");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load driver performance");
+      setDrivers(body.drivers || []);
     } catch (err) {
       console.error("Failed to load driver performance:", err);
     } finally {

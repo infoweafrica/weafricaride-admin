@@ -31,72 +31,28 @@ export default function DispatchCenterPage() {
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
 
   const fetchDrivers = useCallback(async () => {
-    // `drivers.is_online` is the source of truth (set atomically by the
-    // driver_go_online/offline RPCs). driver_locations is populated
-    // separately by the client's GPS stream and can lag behind or be
-    // missing entirely (no fix yet, permission denied) — so it must only
-    // enrich position, never gate whether a driver is considered online.
-    const { data: drData, error: drErr } = await supabase
-      .from("drivers")
-      .select("id, user:users(full_name), vehicle:vehicles!drivers_vehicle_id_fkey(plate_number, make, model, vehicle_type)")
-      .eq("is_online", true);
-
-    if (drErr) {
-      console.error("fetchDrivers: drivers query failed", drErr);
-      setDrivers([]);
-      return;
-    }
-
-    const ids = (drData || []).map((d: any) => d.id);
-    const locMap: Record<string, any> = {};
-    if (ids.length > 0) {
-      const { data: locData, error: locErr } = await supabase
-        .from("driver_locations")
-        .select("driver_id, latitude, longitude, heading, speed, updated_at")
-        .in("driver_id", ids);
-
-      if (locErr) {
-        console.error("fetchDrivers: driver_locations query failed", locErr);
-      } else {
-        (locData || []).forEach((l: any) => {
-          locMap[l.driver_id] = l;
-        });
+    try {
+      const res = await fetch("/api/drivers/operator-available");
+      const body = await res.json();
+      if (!res.ok) {
+        console.error("fetchDrivers failed", body.error);
+        setDrivers([]);
+        return;
       }
+      setDrivers(body.drivers || []);
+    } catch (err) {
+      console.error("fetchDrivers failed", err);
+      setDrivers([]);
     }
-
-    const result = (drData || []).map((d: any) => {
-      const loc = locMap[d.id];
-      return {
-        id: d.id,
-        driver_id: d.id,
-        driver_name: d.user?.full_name || d.id.slice(0, 8),
-        plate: d.vehicle?.plate_number,
-        vehicle: [d.vehicle?.make, d.vehicle?.model].filter(Boolean).join(" "),
-        vehicle_type: d.vehicle?.vehicle_type,
-        latitude: loc?.latitude ?? null,
-        longitude: loc?.longitude ?? null,
-        heading: loc?.heading,
-        speed: loc?.speed,
-        is_online: true,
-        updated_at: loc?.updated_at,
-      };
-    });
-
-    setDrivers(result);
   }, []);
 
   useEffect(() => {
     fetchDrivers();
-
-    const channel = supabase
-      .channel("operator_booking_driver_locations")
-      .on("postgres_changes", { event: "*", schema: "public", table: "driver_locations" }, fetchDrivers)
-      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, fetchDrivers)
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Driver identity/location now come from a server-side API route rather
+    // than a direct table subscription (see fetchDrivers), so we poll
+    // instead of a postgres_changes realtime channel.
+    const interval = setInterval(fetchDrivers, 10000);
+    return () => clearInterval(interval);
   }, [fetchDrivers]);
 
   async function forceOffline(driverId: string) {

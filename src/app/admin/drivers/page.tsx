@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { ErrorBoundary, ApiErrorDisplay, EmptyState } from "@/components/ErrorBoundary";
 import { useCityContext } from "@/lib/city-context";
 import Pagination from "@/components/Pagination";
-import { supabase } from "@/lib/supabase";
 import {
   Search,
   Eye,
@@ -267,18 +266,17 @@ function DriversContent() {
     updated_at: d.updated_at,
   });
 
-  // Load live locations on mount + subscribe to real-time
+  // Load live locations + rides from the server-side live-map API (both
+  // driver_locations and drivers require an admin session server-side —
+  // the browser has no Supabase auth session to satisfy RLS with).
   useEffect(() => {
-    const fetchLocations = async () => {
+    const fetchLiveMap = async () => {
       try {
-        const { data } = await supabase
-          .from("driver_locations")
-          .select("id, driver_id, latitude, longitude, heading, speed, is_online, updated_at")
-          .eq("is_online", true)
-          .order("updated_at", { ascending: false })
-          .limit(200);
+        const res = await fetch("/api/live-map");
+        if (!res.ok) return;
+        const data = await res.json();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mapped = ((data as any[]) || []).map((d: any) => mapDriverLocation(d));
+        const mapped = ((data.drivers as any[]) || []).map((d: any) => mapDriverLocation(d));
         // Enrich with driver names from existing drivers list
         const nameMap: Record<string, string> = {};
         drivers.forEach((d) => {
@@ -288,70 +286,17 @@ function DriversContent() {
           ...d,
           driver_name: nameMap[d.driver_id] || d.driver_name,
         })));
-      } catch {
-        // silently ignore
-      }
-    };
-
-    fetchLocations();
-
-    const fetchRides = async () => {
-      try {
-        const res = await fetch("/api/live-map");
-        if (!res.ok) return;
-        const data = await res.json();
         setLiveRides(data.rides || []);
       } catch {
         // silently ignore
       }
     };
-    fetchRides();
-    const ridesInterval = setInterval(fetchRides, 15000);
 
-    const channel = supabase
-      .channel("drivers_page_realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "driver_locations" },
-        async (payload) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const newRow = (payload.new as any) || {};
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const oldRow = (payload.eventType === "DELETE" ? (payload.old as any) : null);
-
-          if (payload.eventType === "DELETE") {
-            setLiveLocations((prev) => prev.filter((d) => d.id !== oldRow?.id));
-            return;
-          }
-
-          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            const mapped = mapDriverLocation(newRow);
-            // Try to get driver name from existing drivers list
-            const nameMap: Record<string, string> = {};
-            setLiveLocations((prev) => {
-              // Build name map from current state
-              prev.forEach((d) => {
-                if (d.driver_name && !d.driver_name.startsWith("Driver ")) {
-                  nameMap[d.driver_id] = d.driver_name;
-                }
-              });
-              const enriched = { ...mapped, driver_name: nameMap[mapped.driver_id] || mapped.driver_name };
-              const idx = prev.findIndex((d) => d.id === enriched.id);
-              if (idx >= 0) {
-                const copy = [...prev];
-                copy[idx] = enriched;
-                return copy;
-              }
-              return [...prev, enriched];
-            });
-          }
-        }
-      )
-      .subscribe();
+    fetchLiveMap();
+    const interval = setInterval(fetchLiveMap, 15000);
 
     return () => {
-      supabase.removeChannel(channel);
-      clearInterval(ridesInterval);
+      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

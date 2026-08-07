@@ -17,11 +17,11 @@ export default function DriverAnalyticsPage() {
       const [topRes, cancelRes, earnRes] = await Promise.all([
         supabase.rpc("get_top_driver_performance", { p_limit: 10 }),
         supabase.from("rides").select("driver_id, count", { count: "exact" }).eq("status", "cancelled").limit(10),
-        supabase.from("drivers").select("id, total_earnings, user:users(full_name)").order("total_earnings", { ascending: false }).limit(10),
+        fetch("/api/drivers/top-earners").then((r) => r.json()),
       ]);
 
       if (topRes.data) setTopDrivers(topRes.data as any[]);
-      if (earnRes.data) setHighestEarners(earnRes.data as any[]);
+      if (earnRes.drivers) setHighestEarners(earnRes.drivers as any[]);
       if (cancelRes.data) setTopCancellers(cancelRes.data as any[]);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }

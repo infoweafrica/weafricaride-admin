@@ -231,11 +231,13 @@ function OnboardingContent() {
   const handleUpdateDateOfBirth = async (driver: OnboardingDriver, value: string) => {
     setActionLoading(driver.id);
     try {
-      const { error: err } = await supabase
-        .from("drivers")
-        .update({ date_of_birth: value || null })
-        .eq("id", driver.id);
-      if (err) throw new Error(err.message);
+      const res = await fetch(`/api/drivers/${driver.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date_of_birth: value || null }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to update date of birth");
       setDrivers((prev) => prev.map((d) => (d.id === driver.id ? { ...d, date_of_birth: value || null } : d)));
       setSelectedDriver((prev) => (prev && prev.id === driver.id ? { ...prev, date_of_birth: value || null } : prev));
     } catch (e) {
@@ -255,8 +257,13 @@ function OnboardingContent() {
   ) => {
     setActionLoading(driver.id);
     try {
-      const { error: err } = await supabase.from("drivers").update({ [field]: value }).eq("id", driver.id);
-      if (err) throw new Error(err.message);
+      const res = await fetch(`/api/drivers/${driver.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to update verification");
       setDrivers((prev) => prev.map((d) => (d.id === driver.id ? { ...d, [field]: value } : d)));
       setSelectedDriver((prev) => (prev && prev.id === driver.id ? { ...prev, [field]: value } : prev));
     } catch (e) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import { Search, Wallet, DollarSign, TrendingUp, RefreshCw, Download, Eye } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
@@ -30,77 +29,11 @@ export default function DriverWalletsPage() {
   const fetchWallets = useCallback(async () => {
     setLoading(true);
     try {
-      // Try to fetch from driver_wallets table
-      const { data: walletData, error } = await supabase
-        .from("driver_wallets")
-        .select("*, driver:drivers(user:users(full_name, phone))")
-        .order("available_balance", { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-
-      if (walletData && walletData.length > 0) {
-        const mapped = walletData.map((w: any) => {
-          const driverObj = w.driver as Record<string, any> | undefined;
-          const userObj = driverObj?.user as Record<string, any> | undefined;
-          return {
-            id: w.id,
-            driver_id: w.driver_id,
-            available_balance: w.available_balance || 0,
-            pending_balance: w.pending_balance || 0,
-            withdrawn_balance: w.withdrawn_balance || 0,
-            cash_collected: w.cash_collected || 0,
-            commission_owed: w.commission_owed || 0,
-            currency: w.currency || "MWK",
-            status: w.status || "active",
-            driver_name: userObj?.full_name || driverObj?.full_name || "N/A",
-            driver_phone: userObj?.phone || driverObj?.phone || "",
-            updated_at: w.updated_at,
-          };
-        });
-        setWallets(mapped);
-        setSummary({
-          available: mapped.reduce((s: number, w: DriverWallet) => s + w.available_balance, 0),
-          pending: mapped.reduce((s: number, w: DriverWallet) => s + w.pending_balance, 0),
-          withdrawn: mapped.reduce((s: number, w: DriverWallet) => s + w.withdrawn_balance, 0),
-          cash: mapped.reduce((s: number, w: DriverWallet) => s + w.cash_collected, 0),
-          commission: mapped.reduce((s: number, w: DriverWallet) => s + w.commission_owed, 0),
-        });
-      } else {
-        // Fallback to drivers table with wallet fields
-        const { data: driverData } = await supabase
-          .from("drivers")
-          .select("id, available_balance, pending_balance, cash_collected, total_earnings, user:users(full_name, phone)")
-          .limit(100);
-
-        if (driverData) {
-          const mapped = driverData.map((d: any) => {
-            const userObj = d.user as Record<string, any> | undefined;
-            return {
-              id: d.id,
-              driver_id: d.id,
-              available_balance: d.available_balance || 0,
-              pending_balance: d.pending_balance || 0,
-              withdrawn_balance: (d.total_earnings || 0) - (d.available_balance || 0) - (d.pending_balance || 0),
-              cash_collected: d.cash_collected || 0,
-              commission_owed: Math.round((d.total_earnings || 0) * 0.15),
-              currency: "MWK",
-              status: "active",
-              driver_name: userObj?.full_name || "N/A",
-              driver_phone: userObj?.phone || "",
-              updated_at: new Date().toISOString(),
-            };
-          });
-          setWallets(mapped);
-          setSummary({
-            available: mapped.reduce((s: number, w: DriverWallet) => s + w.available_balance, 0),
-            pending: mapped.reduce((s: number, w: DriverWallet) => s + w.pending_balance, 0),
-            withdrawn: mapped.reduce((s: number, w: DriverWallet) => s + w.withdrawn_balance, 0),
-            cash: mapped.reduce((s: number, w: DriverWallet) => s + w.cash_collected, 0),
-            commission: mapped.reduce((s: number, w: DriverWallet) => s + w.commission_owed, 0),
-          });
-        }
-      }
+      const res = await fetch("/api/drivers/wallets");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load wallets");
+      setWallets(body.wallets || []);
+      setSummary(body.summary || { available: 0, pending: 0, withdrawn: 0, cash: 0, commission: 0 });
     } catch (err) {
       console.error("Failed to load wallets:", err);
     } finally {

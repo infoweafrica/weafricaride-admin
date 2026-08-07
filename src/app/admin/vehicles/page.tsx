@@ -126,19 +126,9 @@ export default function VehiclesPage() {
   useEffect(() => {
     async function loadDrivers() {
       try {
-        const { data } = await supabase.from("drivers")
-          .select("id, user:users(full_name), vehicle:vehicles(plate_number)")
-          .eq("is_approved", true);
-        if (data) {
-          setAvailableDrivers(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (data as any[]).map((d) => ({
-              id: d.id,
-              full_name: d.user?.full_name || "Unknown",
-              plate_number: d.vehicle?.plate_number || undefined,
-            }))
-          );
-        }
+        const res = await fetch("/api/drivers/available-for-vehicle");
+        const body = await res.json();
+        if (res.ok) setAvailableDrivers(body.drivers || []);
       } catch {
         // ignore
       }
