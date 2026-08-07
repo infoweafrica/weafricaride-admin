@@ -174,6 +174,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Onboarding', href: '/admin/drivers/onboarding', icon: '📝', department: 'drivers', permission: 'approve_drivers' },
   { label: 'Vehicles', href: '/admin/vehicles', icon: '🚙', department: 'drivers', permission: 'approve_vehicles' },
   { label: 'Vehicle Classes', href: '/admin/vehicles/classes', icon: '🚘', department: 'drivers', permission: 'approve_vehicles' },
+  { label: 'Vehicle Catalog', href: '/admin/vehicles/catalog', icon: '📇', department: 'drivers', permission: 'approve_vehicles' },
   { label: 'Riders', href: '/admin/users', icon: '🧑‍🤝‍🧑', department: 'drivers', permission: 'manage_users' },
   { label: 'Driver Wallets', href: '/admin/drivers/wallets', icon: '👛', department: 'drivers', permission: 'manage_finance' },
   { label: 'Driver Performance', href: '/admin/drivers/performance', icon: '📊', department: 'drivers', permission: 'view_analytics' },

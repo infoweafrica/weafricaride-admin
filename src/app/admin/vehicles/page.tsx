@@ -44,6 +44,21 @@ interface VehicleTypeRow {
   count: number;
 }
 
+// Legacy vehicle_type vocabulary, derived from the resolved vehicle class —
+// kept only so older code paths that still read that column (e.g. the
+// eligibility fallback for unclassed vehicles) see a sane value.
+// Eligibility itself is driven by vehicle_class_id, not this field.
+function legacyTierForClassSlug(slug?: string | null): string {
+  switch (slug) {
+    case "economy_hatchback": return "go";
+    case "standard_sedan": return "x";
+    case "xl_vehicle": return "xl";
+    case "comfort_sedan": return "comfort";
+    case "premium_luxury": return "black";
+    default: return "go";
+  }
+}
+
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
@@ -60,8 +75,8 @@ export default function VehiclesPage() {
   const [detailTab, setDetailTab] = useState<"info" | "documents" | "inspections" | "trips">("info");
   const [activeTab, setActiveTab] = useState<VehicleTab>("overview");
   const [newVehicle, setNewVehicle] = useState({
-    plate_number: "", make: "", model: "", year: new Date().getFullYear(), color: "White",
-    vehicle_type: "economy", seats: 4, driver_id: ""
+    plate_number: "", make_id: "", model_id: "", year: new Date().getFullYear(), color: "White",
+    driver_id: ""
   });
   const [onTripCount, setOnTripCount] = useState(0);
 
@@ -70,6 +85,12 @@ export default function VehiclesPage() {
 
   // Vehicle classes for the class-assignment dropdown
   const [vehicleClasses, setVehicleClasses] = useState<{ id: string; name: string; slug: string }[]>([]);
+
+  // Make -> Model catalog for the Add Vehicle form — selecting a model
+  // auto-resolves vehicle_class_id instead of an admin typing make/model
+  // free text and guessing a service type.
+  const [vehicleMakes, setVehicleMakes] = useState<{ id: string; name: string }[]>([]);
+  const [vehicleModels, setVehicleModels] = useState<{ id: string; make_id: string; name: string; vehicle_class_id: string | null }[]>([]);
 
   useEffect(() => {
     async function loadVehicleClasses() {
@@ -84,6 +105,22 @@ export default function VehiclesPage() {
       }
     }
     loadVehicleClasses();
+  }, []);
+
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        const [{ data: mk }, { data: md }] = await Promise.all([
+          supabase.from("vehicle_makes").select("id, name").eq("is_active", true).order("sort_order"),
+          supabase.from("vehicle_models").select("id, make_id, name, vehicle_class_id").eq("is_active", true).order("sort_order"),
+        ]);
+        setVehicleMakes(mk || []);
+        setVehicleModels(md || []);
+      } catch {
+        // ignore
+      }
+    }
+    loadCatalog();
   }, []);
 
   useEffect(() => {
@@ -161,7 +198,25 @@ export default function VehiclesPage() {
   useEffect(() => { filterVehicles(); }, [filterVehicles]);
 
   const handleAddVehicle = async () => {
-    try { await supabase.from("vehicles").insert(newVehicle); fetchVehicles(); setShowAddModal(false); } catch { /* ignore */ }
+    const make = vehicleMakes.find((m) => m.id === newVehicle.make_id);
+    const model = vehicleModels.find((m) => m.id === newVehicle.model_id);
+    if (!make || !model) return alert("Please select a make and model.");
+    const vehicleClass = vehicleClasses.find((c) => c.id === model.vehicle_class_id);
+    try {
+      await supabase.from("vehicles").insert({
+        plate_number: newVehicle.plate_number,
+        make: make.name,
+        model: model.name,
+        year: newVehicle.year,
+        color: newVehicle.color,
+        vehicle_model_id: model.id,
+        vehicle_class_id: model.vehicle_class_id,
+        vehicle_type: legacyTierForClassSlug(vehicleClass?.slug),
+        driver_id: newVehicle.driver_id || null,
+      });
+      fetchVehicles();
+      setShowAddModal(false);
+    } catch { /* ignore */ }
   };
 
   const handleApprove = async (id: string) => {
@@ -805,12 +860,40 @@ export default function VehiclesPage() {
             <h2 className="text-lg font-semibold">Add New Vehicle</h2>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-xs text-gray-500 mb-1">Plate Number</label><input type="text" value={newVehicle.plate_number} onChange={(e) => setNewVehicle(p => ({ ...p, plate_number: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-              <div><label className="block text-xs text-gray-500 mb-1">Type</label><select value={newVehicle.vehicle_type} onChange={(e) => setNewVehicle(p => ({ ...p, vehicle_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="economy">WeAfrica X</option><option value="comfort">WeAfrica Comfort</option><option value="xl">WeAfrica XL</option><option value="luxury">WeAfrica Black</option><option value="taxi">WeAfrica Taxi</option><option value="boda">WeAfrica Boda</option></select></div>
-              <div><label className="block text-xs text-gray-500 mb-1">Make</label><input type="text" value={newVehicle.make} onChange={(e) => setNewVehicle(p => ({ ...p, make: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-              <div><label className="block text-xs text-gray-500 mb-1">Model</label><input type="text" value={newVehicle.model} onChange={(e) => setNewVehicle(p => ({ ...p, model: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Make</label>
+                <select
+                  value={newVehicle.make_id}
+                  onChange={(e) => setNewVehicle(p => ({ ...p, make_id: e.target.value, model_id: "" }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="">Select make…</option>
+                  {vehicleMakes.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Model</label>
+                <select
+                  value={newVehicle.model_id}
+                  onChange={(e) => setNewVehicle(p => ({ ...p, model_id: e.target.value }))}
+                  disabled={!newVehicle.make_id}
+                  className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100"
+                >
+                  <option value="">{newVehicle.make_id ? "Select model…" : "Select a make first"}</option>
+                  {vehicleModels.filter((m) => m.make_id === newVehicle.make_id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              {newVehicle.model_id && (() => {
+                const model = vehicleModels.find((m) => m.id === newVehicle.model_id);
+                const vc = vehicleClasses.find((c) => c.id === model?.vehicle_class_id);
+                return (
+                  <div className="text-xs text-gray-500 -mt-2">
+                    Vehicle class: <span className="font-medium text-gray-700">{vc?.name || "Unassigned"}</span>
+                  </div>
+                );
+              })()}
               <div><label className="block text-xs text-gray-500 mb-1">Year</label><input type="number" value={newVehicle.year} onChange={(e) => setNewVehicle(p => ({ ...p, year: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
               <div><label className="block text-xs text-gray-500 mb-1">Color</label><input type="text" value={newVehicle.color} onChange={(e) => setNewVehicle(p => ({ ...p, color: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-              <div><label className="block text-xs text-gray-500 mb-1">Seats</label><input type="number" value={newVehicle.seats} onChange={(e) => setNewVehicle(p => ({ ...p, seats: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-2 pt-2"><button onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleAddVehicle} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Add Vehicle</button></div>
           </div>

@@ -1,0 +1,11 @@
+-- driver-app's onboarding payout-setup step upserts driver_wallets with
+-- `onConflict: 'driver_id'` and driver_id present in the payload (see
+-- onboarding_screen.dart). PostgREST's generated ON CONFLICT DO UPDATE
+-- includes every payload column in its SET clause, even the conflict
+-- target itself, so anon needs UPDATE on driver_id too — even though the
+-- value can never actually change (the row was matched BY that value, so
+-- "updating" it always sets it to what it already was). The prior RLS
+-- tightening migration (20260716000200) granted UPDATE on the payout
+-- config columns but missed this, which blocked driver onboarding
+-- submission entirely with "permission denied for table driver_wallets".
+GRANT UPDATE (driver_id) ON public.driver_wallets TO anon, authenticated;

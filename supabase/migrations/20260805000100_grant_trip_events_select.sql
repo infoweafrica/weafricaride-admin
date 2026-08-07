@@ -1,0 +1,11 @@
+-- trip_events has an RLS policy ("Users can view their trip events" —
+-- rider_id = auth.uid() OR driver_id = auth.uid() via the parent ride)
+-- but was never actually GRANTed SELECT to any role. RLS policies only
+-- apply after the coarser table-level grant check passes, so with no
+-- grant at all this table was unreadable via the REST API for every
+-- caller regardless of the policy — breaking rider-app's
+-- _syncEventVersion() (event_version never syncs from its 0 default,
+-- so the next real transition sends a version the server already has
+-- and gets rejected as stale — this is what made cancel silently fail
+-- while a ride was still in 'searching').
+GRANT SELECT ON public.trip_events TO anon, authenticated;

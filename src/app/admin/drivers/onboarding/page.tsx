@@ -55,6 +55,10 @@ interface OnboardingDriver {
   vehicle_model: string | null;
   vehicle_year: string | null;
   vehicle_color: string | null;
+  vehicle_photo_front_url: string | null;
+  vehicle_photo_back_url: string | null;
+  vehicle_photo_side_url: string | null;
+  vehicle_photo_interior_url: string | null;
 
   // Fleet driver
   driving_experience_years: number | null;
@@ -68,6 +72,9 @@ interface OnboardingDriver {
   // Identity
   national_id: string | null;
   license_number: string | null;
+  id_verified: boolean;
+  license_verified: boolean;
+  date_of_birth: string | null;
 
   // Payment
   payout_method: string | null;
@@ -165,6 +172,10 @@ function OnboardingContent() {
           vehicle_model: vehicle.model || d.vehicle_model || null,
           vehicle_year: vehicle.year ? String(vehicle.year) : null,
           vehicle_color: vehicle.color || d.vehicle_color || null,
+          vehicle_photo_front_url: vehicle.photo_front_url || null,
+          vehicle_photo_back_url: vehicle.photo_back_url || null,
+          vehicle_photo_side_url: vehicle.photo_side_url || null,
+          vehicle_photo_interior_url: vehicle.photo_interior_url || null,
           driving_experience_years: d.driving_experience_years || null,
           employment_type: d.employment_type || null,
           preferred_vehicle_type: d.preferred_vehicle_type || null,
@@ -172,6 +183,9 @@ function OnboardingContent() {
           emergency_contact_phone: d.emergency_contact_phone || null,
           national_id: d.national_id || null,
           license_number: d.license_number || d.driver_license_number || null,
+          id_verified: d.id_verified === true,
+          license_verified: d.license_verified === true,
+          date_of_birth: d.date_of_birth || null,
           payout_method: null, // fetched from wallet below
           mobile_money_number: null,
           bank_name: null,
@@ -206,6 +220,47 @@ function OnboardingContent() {
       fetchDrivers();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Approval failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Admin-editable fallback for drivers who applied before the driver-app
+  // collected date_of_birth (or who never went through onboarding there at
+  // all) — also required by validate_driver_approval before final approval.
+  const handleUpdateDateOfBirth = async (driver: OnboardingDriver, value: string) => {
+    setActionLoading(driver.id);
+    try {
+      const { error: err } = await supabase
+        .from("drivers")
+        .update({ date_of_birth: value || null })
+        .eq("id", driver.id);
+      if (err) throw new Error(err.message);
+      setDrivers((prev) => prev.map((d) => (d.id === driver.id ? { ...d, date_of_birth: value || null } : d)));
+      setSelectedDriver((prev) => (prev && prev.id === driver.id ? { ...prev, date_of_birth: value || null } : prev));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update date of birth");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Sets id_verified/license_verified once an admin has actually checked the
+  // document against the driver's stated details — required by the
+  // validate_driver_approval DB trigger before final approval is allowed.
+  const handleToggleVerification = async (
+    driver: OnboardingDriver,
+    field: "id_verified" | "license_verified",
+    value: boolean
+  ) => {
+    setActionLoading(driver.id);
+    try {
+      const { error: err } = await supabase.from("drivers").update({ [field]: value }).eq("id", driver.id);
+      if (err) throw new Error(err.message);
+      setDrivers((prev) => prev.map((d) => (d.id === driver.id ? { ...d, [field]: value } : d)));
+      setSelectedDriver((prev) => (prev && prev.id === driver.id ? { ...prev, [field]: value } : prev));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update verification");
     } finally {
       setActionLoading(null);
     }
@@ -430,6 +485,20 @@ function OnboardingContent() {
                 <InfoRow label="City" value={selectedDriver.city || "—"} />
                 <InfoRow label="Address" value={selectedDriver.address || "—"} />
                 <InfoRow label="Status" value={selectedDriver.approval_status} />
+                <div className="flex items-center text-sm">
+                  <span className="w-32 text-gray-500 shrink-0">Date of Birth</span>
+                  <input
+                    type="date"
+                    defaultValue={selectedDriver.date_of_birth ?? ""}
+                    disabled={actionLoading === selectedDriver.id}
+                    onBlur={(e) => {
+                      if (e.target.value !== (selectedDriver.date_of_birth ?? "")) {
+                        handleUpdateDateOfBirth(selectedDriver, e.target.value);
+                      }
+                    }}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
                 {selectedDriver.submitted_at && (
                   <InfoRow label="Submitted" value={new Date(selectedDriver.submitted_at).toLocaleString()} />
                 )}
@@ -438,9 +507,21 @@ function OnboardingContent() {
               {/* Identity Documents */}
               <Section title="Identity & Documents">
                 <InfoRow label="National ID" value={selectedDriver.national_id || "—"} />
-                <InfoRow label="License Number" value={selectedDriver.license_number || "—"} />
                 <DocLink label="ID Photo" url={selectedDriver.id_document_url} />
+                <VerifyToggle
+                  label="ID verified"
+                  checked={selectedDriver.id_verified}
+                  disabled={actionLoading === selectedDriver.id}
+                  onChange={(v) => handleToggleVerification(selectedDriver, "id_verified", v)}
+                />
+                <InfoRow label="License Number" value={selectedDriver.license_number || "—"} />
                 <DocLink label="License Photo" url={selectedDriver.license_document_url} />
+                <VerifyToggle
+                  label="License verified"
+                  checked={selectedDriver.license_verified}
+                  disabled={actionLoading === selectedDriver.id}
+                  onChange={(v) => handleToggleVerification(selectedDriver, "license_verified", v)}
+                />
                 <DocLink label="Profile Photo" url={selectedDriver.profile_picture_url} />
               </Section>
 
@@ -453,6 +534,10 @@ function OnboardingContent() {
                   <InfoRow label="Color" value={selectedDriver.vehicle_color || "—"} />
                   <DocLink label="Vehicle Registration" url={selectedDriver.vehicle_registration_url} />
                   <DocLink label="Insurance" url={selectedDriver.insurance_document_url} />
+                  <DocLink label="Photo: Front" url={selectedDriver.vehicle_photo_front_url} />
+                  <DocLink label="Photo: Back" url={selectedDriver.vehicle_photo_back_url} />
+                  <DocLink label="Photo: Side" url={selectedDriver.vehicle_photo_side_url} />
+                  <DocLink label="Photo: Interior" url={selectedDriver.vehicle_photo_interior_url} />
                   {selectedDriver.vehicle_photo_urls && selectedDriver.vehicle_photo_urls.length > 0 && (
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Vehicle Photos:</p>
@@ -538,6 +623,31 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span className="w-32 text-gray-500 shrink-0">{label}</span>
       <span className="text-gray-800">{value}</span>
     </div>
+  );
+}
+
+function VerifyToggle({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+      />
+      <span className={checked ? "text-green-700 font-medium" : "text-gray-500"}>{label}</span>
+    </label>
   );
 }
 
