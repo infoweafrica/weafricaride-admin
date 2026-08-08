@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PermissionGuard from "@/components/guards/PermissionGuard";
-import { supabase } from "@/lib/supabase";
 import { RefreshCw, Edit2, Save, X, Car, Bike, Truck } from "lucide-react";
 import type { PricingConfig } from "@/lib/types";
 
@@ -30,15 +29,10 @@ function PricingContent() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: err } = await supabase
-        .from("pricing_config")
-        .select("*")
-        .order("country_code")
-        .order("city")
-        .order("vehicle_type")
-        .limit(100);
-      if (err) throw new Error(err.message);
-      setConfigs((data as PricingConfig[]) || []);
+      const res = await fetch("/api/admin/pricing");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load pricing");
+      setConfigs((body.data as PricingConfig[]) || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load pricing");
     } finally {
@@ -56,11 +50,13 @@ function PricingContent() {
   const saveEdit = async () => {
     if (!editingId || !editForm) return;
     try {
-      const { error: err } = await supabase
-        .from("pricing_config")
-        .update(editForm)
-        .eq("id", editingId);
-      if (err) throw new Error(err.message);
+      const res = await fetch(`/api/admin/pricing/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Save failed");
       setEditingId(null);
       fetchConfigs();
     } catch (e) {
