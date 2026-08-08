@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       .single();
 
     if (error || !data) {
+      if (error) console.error("admin_verify_login RPC error:", error.message);
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
