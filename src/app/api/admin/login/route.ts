@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase";
 import { signAdminSession, ADMIN_SESSION_COOKIE } from "@/lib/admin-session-token";
+import { hashAdminPassword } from "@/lib/admin-password";
 import type { Permission } from "@/lib/types";
-
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password, "utf8").digest("hex");
-}
 
 async function fetchPermissionsForRole(
   roleName: string,
@@ -48,7 +44,7 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const passwordHash = hashPassword(password);
+    const passwordHash = hashAdminPassword(password);
     const db = getServiceClient();
 
     // Service-role client bypasses RLS entirely — this route is the only

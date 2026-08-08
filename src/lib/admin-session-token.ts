@@ -88,3 +88,20 @@ export async function getAdminSessionFromCookies(): Promise<AdminSessionTokenPay
   const token = store.get(ADMIN_SESSION_COOKIE)?.value;
   return verifyAdminSessionToken(token);
 }
+
+/**
+ * Server-side mirror of the hasPermission() logic in auth-context.tsx.
+ * Sessions with no permissions array (pre-permission-system) fall back to
+ * treating the superadmin role as all_access, everyone else as denied.
+ */
+export function sessionHasPermission(
+  session: AdminSessionTokenPayload | null,
+  permission: Permission
+): boolean {
+  if (!session) return false;
+  if (!session.permissions || session.permissions.length === 0) {
+    return session.role === "superadmin";
+  }
+  if (session.permissions.includes("all_access")) return true;
+  return session.permissions.includes(permission);
+}

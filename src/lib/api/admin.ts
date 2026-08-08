@@ -2,8 +2,12 @@
 // ====================================
 // WeAfrica Ride — Admin/Staff API Module
 // ====================================
-// Queries admin_users, admin_roles, role_permissions, admin_permissions.
-// Supports the full 16-role hierarchy.
+// admin_users has no anon-key RLS access (see
+// 20260716000200_tighten_anon_financial_rls.sql) — all staff CRUD below
+// goes through /api/admin/staff/*, which uses the service-role client and
+// the caller's signed session cookie. admin_roles/role_permissions/
+// admin_permissions are still anon-readable (non-sensitive role
+// definitions), so fetchRoles() below queries them directly.
 
 import { supabase } from "@/lib/supabase";
 import type { AdminUser, AdminRole, Permission } from "../types";
@@ -17,39 +21,21 @@ export async function fetchStaff(
   page = 1,
   pageSize = 25
 ): Promise<PaginatedResult<AdminUser[]>> {
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
   try {
-    const { count: total, error: countErr } = await supabase
-      .from(ADMIN_TABLE)
-      .select("*", { count: "exact", head: true });
-
-    if (countErr) {
-      return { data: null, error: countErr.message, count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
+    const res = await fetch(`/api/admin/staff?page=${page}&pageSize=${pageSize}`);
+    const body = await res.json();
+    if (!res.ok) {
+      return { data: null, error: body.error || "Failed to load staff", count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
     }
-
-    const { data, error } = await supabase
-      .from(ADMIN_TABLE)
-      .select("*")
-      .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (error) {
-      return { data: null, error: error.message, count: 0, page, pageSize, totalCount: total ?? 0, totalPages: Math.ceil((total ?? 0) / pageSize) };
-    }
-
-    const arr = (data as AdminUser[]) ?? [];
-    const totalCount = total ?? 0;
-
+    const arr = (body.data as AdminUser[]) ?? [];
     return {
       data: arr,
       error: null,
       count: arr.length,
-      page,
-      pageSize,
-      totalCount,
-      totalPages: Math.ceil(totalCount / pageSize),
+      page: body.page,
+      pageSize: body.pageSize,
+      totalCount: body.totalCount,
+      totalPages: body.totalPages,
     };
   } catch (err) {
     return { data: null, error: err instanceof Error ? err.message : "Unknown", count: 0, page, pageSize, totalCount: 0, totalPages: 0 };
@@ -102,31 +88,28 @@ export async function fetchRoles(): Promise<AdminRole[]> {
 
 // ─── STAFF ACTIONS ────────────────────────────────────────────
 
+async function patchStaff(adminId: string, body: Record<string, unknown>): Promise<boolean> {
+  const res = await fetch(`/api/admin/staff/${adminId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.ok;
+}
+
 export async function suspendStaff(adminId: string): Promise<boolean> {
-  const { error } = await supabase
-    .from(ADMIN_TABLE)
-    .update({ is_active: false })
-    .eq("id", adminId);
-  return !error;
+  return patchStaff(adminId, { status: "suspended" });
 }
 
 export async function activateStaff(adminId: string): Promise<boolean> {
-  const { error } = await supabase
-    .from(ADMIN_TABLE)
-    .update({ is_active: true })
-    .eq("id", adminId);
-  return !error;
+  return patchStaff(adminId, { status: "active" });
 }
 
 export async function changeStaffRole(
   adminId: string,
-  newRole: string
+  roleId: string
 ): Promise<boolean> {
-  const { error } = await supabase
-    .from(ADMIN_TABLE)
-    .update({ role: newRole })
-    .eq("id", adminId);
-  return !error;
+  return patchStaff(adminId, { role_id: roleId });
 }
 
 export async function inviteStaffByEmail(
@@ -135,19 +118,11 @@ export async function inviteStaffByEmail(
   roleId: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/send-invite-email`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({ email, full_name: fullName, role_id: roleId }),
-      }
-    );
+    const response = await fetch("/api/admin/staff/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, full_name: fullName, role_id: roleId }),
+    });
     const data = await response.json();
     if (response.ok && data.success)
       return { success: true, message: data.message ?? "Invitation sent!" };
@@ -164,8 +139,8 @@ export async function inviteStaffByEmail(
 }
 
 export async function deleteStaff(adminId: string): Promise<boolean> {
-  const { error } = await supabase.from(ADMIN_TABLE).delete().eq("id", adminId);
-  return !error;
+  const res = await fetch(`/api/admin/staff/${adminId}`, { method: "DELETE" });
+  return res.ok;
 }
 
 export async function resendInvitation(
@@ -228,16 +203,14 @@ export { type AdminUser };
 
 export async function resetStaffPassword(email: string): Promise<{ success: boolean; message: string }> {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/send_password_reset`, {
+    const response = await fetch("/api/admin/forgot-password", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}` },
-      body: JSON.stringify({ p_email: email }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
     });
     const data = await response.json();
-    if (response.ok) return { success: true, message: "Password reset email sent" };
-    return { success: false, message: data?.message || "Failed to send reset email" };
+    if (response.ok) return { success: true, message: data.message ?? "Password reset email sent" };
+    return { success: false, message: data?.error || "Failed to send reset email" };
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : "Network error" };
   }

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PermissionGuard from "@/components/guards/PermissionGuard";
-import { supabase } from "@/lib/supabase";
 import { fetchStaff, fetchRoles, suspendStaff, activateStaff, changeStaffRole, inviteStaffByEmail, roleLabel } from "@/lib/api/admin";
 import { RefreshCw, UserPlus, ShieldOff, ShieldCheck, Mail, X, ChevronDown } from "lucide-react";
 import type { AdminUser, AdminRole } from "@/lib/types";
@@ -150,7 +149,7 @@ function StaffContent() {
                     <td className="px-4 py-3">
                       <div className="relative">
                         <select
-                          value={s.role_name}
+                          value={roles.find((r) => r.name === s.role_name)?.id || ""}
                           onChange={(e) => handleRoleChange(s.id, e.target.value)}
                           className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white appearance-none pr-6"
                         >

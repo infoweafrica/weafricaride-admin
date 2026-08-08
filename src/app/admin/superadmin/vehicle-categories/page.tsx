@@ -63,6 +63,15 @@ export default function VehicleCategoriesPage() {
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
+  const toggleActive = async (cat: VehicleCategory) => {
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, is_active: !c.is_active } : c)));
+    const { error } = await supabase.from("ride_categories").update({ is_active: !cat.is_active }).eq("id", cat.id);
+    if (error) {
+      console.error(error);
+      setCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, is_active: cat.is_active } : c)));
+    }
+  };
+
   const filtered = categories.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.description?.toLowerCase().includes(search.toLowerCase())
@@ -110,9 +119,12 @@ export default function VehicleCategoriesPage() {
                     {cat.slug && <p className="text-xs text-gray-400">{cat.slug}</p>}
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cat.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                <button
+                  onClick={() => toggleActive(cat)}
+                  className={`text-xs px-2 py-0.5 rounded-full font-medium hover:opacity-80 ${cat.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                >
                   {cat.is_active ? "Active" : "Inactive"}
-                </span>
+                </button>
               </div>
 
               {cat.description && (
