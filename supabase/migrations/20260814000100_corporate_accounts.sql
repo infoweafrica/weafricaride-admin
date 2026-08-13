@@ -138,6 +138,16 @@ ALTER TABLE public.corporate_invoice_items ENABLE ROW LEVEL SECURITY;
 -- Appends one new trailing param (this file's own established pattern —
 -- it previously dropped a stale overload precisely to avoid ambiguous-
 -- overload collisions, so new params go on the end with a DEFAULT).
+-- CREATE OR REPLACE only replaces a function with the exact same argument
+-- list — adding a new trailing param creates a second overload instead of
+-- replacing the old one, reintroducing the exact ambiguous-overload
+-- landmine 20260724000100 already fixed once. Drop the old 14-arg
+-- signature outright before redefining it with 15.
+DROP FUNCTION IF EXISTS public.book_rider_trip(
+  uuid, uuid, text, text, double precision, double precision, text,
+  double precision, double precision, text, numeric, numeric, integer, text
+);
+
 CREATE OR REPLACE FUNCTION public.book_rider_trip(
   p_rider_id uuid,
   p_category_id uuid DEFAULT NULL,
