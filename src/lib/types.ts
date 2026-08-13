@@ -196,6 +196,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Wallets', href: '/admin/finance/wallets', icon: '🏦', department: 'finance', permission: 'manage_finance' },
   { label: 'Reconciliation', href: '/admin/finance/reconciliation', icon: '🔄', department: 'finance', permission: 'manage_finance' },
   { label: 'Pricing', href: '/admin/finance/pricing', icon: '🏷️', department: 'finance', permission: 'manage_pricing' },
+  { label: 'Corporate Accounts', href: '/admin/finance/corporate-accounts', icon: '🏢', department: 'finance', permission: 'manage_finance' },
 
   // Support
   { label: 'Tickets', href: '/admin/support/tickets', icon: '🎫', department: 'support', permission: 'manage_support' },
@@ -216,7 +217,6 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Driver Missions', href: '/admin/marketing/driver-missions', icon: '🎖️', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Demand Events', href: '/admin/marketing/events', icon: '📈', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Referrals', href: '/admin/marketing/referrals', icon: '🎁', department: 'marketing', permission: 'manage_promotions' },
-  { label: 'Corporate Accounts', href: '/admin/marketing/corporate-accounts', icon: '🏢', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Content Moderation', href: '/admin/marketing/moderation', icon: '🖼️', department: 'marketing', permission: 'moderate_content' },
 
   // Analytics
@@ -300,7 +300,7 @@ export type RideStatus =
   | 'no_drivers'
   | 'scheduled';
 
-export type PaymentMethod = 'cash' | 'mobile_money' | 'airtel_money' | 'tnm_mpamba' | 'card' | 'wallet';
+export type PaymentMethod = 'cash' | 'mobile_money' | 'airtel_money' | 'tnm_mpamba' | 'card' | 'wallet' | 'corporate';
 export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded' | 'paid';
 
 export type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -400,6 +400,73 @@ export interface AdminPermission {
   id: string;
   name: Permission;
   description?: string;
+  created_at: string;
+}
+
+// ─── CORPORATE ACCOUNT TYPES ──────────────────────────
+
+export type CorporateBillingMethod = 'corporate_wallet' | 'monthly_invoice';
+export type CorporateAccountStatus = 'active' | 'suspended';
+export type CorporateMemberRole = 'owner' | 'admin' | 'finance' | 'employee';
+export type CorporateInvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+export type CorporateInvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue';
+
+export interface CorporateAccount {
+  id: string;
+  name: string;
+  registration_number?: string | null;
+  billing_email: string;
+  finance_email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  billing_method: CorporateBillingMethod;
+  wallet_balance: number;
+  credit_limit?: number | null;
+  daily_employee_limit?: number | null;
+  monthly_account_limit?: number | null;
+  allowed_vehicle_classes?: string[] | null;
+  status: CorporateAccountStatus;
+  invoice_frequency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CorporateAccountMember {
+  id: string;
+  corporate_account_id: string;
+  rider_id: string;
+  role: CorporateMemberRole;
+  daily_limit_override?: number | null;
+  status: CorporateAccountStatus;
+  joined_at: string;
+  invited_by?: string | null;
+  rider?: { full_name?: string; phone?: string; email?: string } | null;
+}
+
+export interface CorporateInvitation {
+  id: string;
+  corporate_account_id: string;
+  email: string;
+  role: CorporateMemberRole;
+  invite_code: string;
+  status: CorporateInvitationStatus;
+  invited_by?: string | null;
+  expires_at: string;
+  accepted_by?: string | null;
+  accepted_at?: string | null;
+  created_at: string;
+}
+
+export interface CorporateInvoice {
+  id: string;
+  corporate_account_id: string;
+  period_start: string;
+  period_end: string;
+  status: CorporateInvoiceStatus;
+  total_amount: number;
+  issued_at?: string | null;
+  due_at?: string | null;
+  paid_at?: string | null;
   created_at: string;
 }
 
