@@ -92,9 +92,14 @@ function CorporateAccountDetail({ id }: { id: string }) {
     if (!invoicePeriod.start || !invoicePeriod.end) return;
     setGenerating(true);
     const result = await generateCorporateInvoice(id, invoicePeriod.start, invoicePeriod.end);
-    alert(result.success
-      ? `Invoice generated: ${result.ride_count} trips, ${formatMwk(result.total_amount || 0)}`
-      : result.message);
+    if (result.success) {
+      const emailNote = result.ride_count && result.ride_count > 0
+        ? (result.email_sent ? " Emailed to finance." : ` Email not sent${result.email_error ? `: ${result.email_error}` : "."}`)
+        : "";
+      alert(`Invoice generated: ${result.ride_count} trips, ${formatMwk(result.total_amount || 0)}.${emailNote}`);
+    } else {
+      alert(result.message);
+    }
     if (result.success) loadData();
     setGenerating(false);
   };
@@ -177,17 +182,32 @@ function CorporateAccountDetail({ id }: { id: string }) {
               <tr className="text-left text-xs font-medium text-gray-500 uppercase">
                 <th className="px-3 py-2">Period</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Emailed</th>
                 <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {invoices.length === 0 ? (
-                <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No invoices yet</td></tr>
+                <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No invoices yet</td></tr>
               ) : invoices.map((inv) => (
                 <tr key={inv.id}>
                   <td className="px-3 py-2">{inv.period_start} — {inv.period_end}</td>
                   <td className="px-3 py-2">{inv.status}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">
+                    {inv.sent_at ? `Sent to ${inv.sent_to} on ${new Date(inv.sent_at).toLocaleDateString()}` : "Not sent"}
+                  </td>
                   <td className="px-3 py-2 text-right">{formatMwk(inv.total_amount)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <a
+                      href={`/api/admin/corporate/${id}/invoices/${inv.id}/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-600 hover:underline text-xs font-medium"
+                    >
+                      Download PDF
+                    </a>
+                  </td>
                 </tr>
               ))}
             </tbody>

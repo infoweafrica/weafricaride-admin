@@ -30,6 +30,7 @@ export async function sendEmail(params: {
   to: string;
   subject: string;
   html: string;
+  attachments?: { filename: string; content: Buffer; contentType?: string }[];
 }): Promise<{ success: boolean; error?: string }> {
   if (!process.env.SMTP_PASSWORD) {
     return { success: false, error: "SMTP_PASSWORD is not configured" };
@@ -41,6 +42,7 @@ export async function sendEmail(params: {
       to: params.to,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments,
     });
     return { success: true };
   } catch (err) {

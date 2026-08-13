@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { requireAdminSession, sessionHasPermission } from "@/lib/admin-session-token";
 import { sendEmail } from "@/lib/email";
+import { generateCorporateInvoicePdf } from "@/lib/pdf/corporate-invoice-pdf";
+import { fetchCorporateInvoicePdfData } from "@/lib/corporate-invoice-data";
 
 export async function GET(
   request: NextRequest,
@@ -76,18 +78,43 @@ export async function POST(
   }
 
   const toEmail = account?.finance_email || account?.billing_email;
-  if (toEmail && result?.ride_count > 0) {
-    await sendEmail({
-      to: toEmail,
-      subject: `WeAfrica Ride — Corporate invoice for ${account?.name ?? "your account"}`,
-      html: `
-        <p>Hi,</p>
-        <p>Your WeAfrica Ride corporate invoice for ${body.period_start} to ${body.period_end} is ready.</p>
-        <p><strong>${result.ride_count}</strong> trips, total <strong>MWK ${Number(result.total_amount).toLocaleString()}</strong>.</p>
-        <p>Contact WeAfrica Ride finance for payment details.</p>
-      `,
-    });
+  let emailSent = false;
+  let emailError: string | undefined;
+
+  if (toEmail && result?.ride_count > 0 && result?.corporate_invoice_id) {
+    const pdfData = await fetchCorporateInvoicePdfData(db, result.corporate_invoice_id);
+    if (pdfData) {
+      const pdfBuffer = await generateCorporateInvoicePdf(pdfData);
+      const emailResult = await sendEmail({
+        to: toEmail,
+        subject: `WeAfrica Ride — Corporate invoice for ${account?.name ?? "your account"}`,
+        html: `
+          <p>Hi,</p>
+          <p>Your WeAfrica Ride corporate invoice for ${body.period_start} to ${body.period_end} is attached.</p>
+          <p><strong>${result.ride_count}</strong> trips, total <strong>MWK ${Number(result.total_amount).toLocaleString()}</strong>.</p>
+          <p>Contact WeAfrica Ride finance for payment details.</p>
+        `,
+        attachments: [
+          {
+            filename: `weafrica-invoice-${result.corporate_invoice_id.slice(0, 8)}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      emailSent = emailResult.success;
+      emailError = emailResult.error;
+
+      if (emailSent) {
+        await db
+          .from("corporate_invoices")
+          .update({ sent_at: new Date().toISOString(), sent_to: toEmail })
+          .eq("id", result.corporate_invoice_id);
+      }
+    } else {
+      emailError = "Could not assemble invoice data for PDF generation";
+    }
   }
 
-  return NextResponse.json({ success: true, ...result });
+  return NextResponse.json({ success: true, ...result, email_sent: emailSent, email_error: emailError });
 }

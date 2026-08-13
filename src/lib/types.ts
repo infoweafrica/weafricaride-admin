@@ -467,6 +467,8 @@ export interface CorporateInvoice {
   issued_at?: string | null;
   due_at?: string | null;
   paid_at?: string | null;
+  sent_at?: string | null;
+  sent_to?: string | null;
   created_at: string;
 }
 

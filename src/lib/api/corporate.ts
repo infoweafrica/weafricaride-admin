@@ -147,7 +147,14 @@ export async function generateCorporateInvoice(
   id: string,
   periodStart: string,
   periodEnd: string
-): Promise<{ success: boolean; message: string; ride_count?: number; total_amount?: number }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  ride_count?: number;
+  total_amount?: number;
+  email_sent?: boolean;
+  email_error?: string;
+}> {
   try {
     const res = await fetch(`/api/admin/corporate/${id}/invoices`, {
       method: "POST",
@@ -155,7 +162,16 @@ export async function generateCorporateInvoice(
       body: JSON.stringify({ period_start: periodStart, period_end: periodEnd }),
     });
     const body = await res.json();
-    if (res.ok && body.success) return { success: true, message: "Invoice generated", ride_count: body.ride_count, total_amount: body.total_amount };
+    if (res.ok && body.success) {
+      return {
+        success: true,
+        message: "Invoice generated",
+        ride_count: body.ride_count,
+        total_amount: body.total_amount,
+        email_sent: body.email_sent,
+        email_error: body.email_error,
+      };
+    }
     return { success: false, message: body.error ?? "Failed to generate invoice" };
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : "Network error" };
