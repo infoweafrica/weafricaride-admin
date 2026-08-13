@@ -187,6 +187,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Trip Playback', href: '/admin/safety/playback', icon: '▶️', department: 'safety', permission: 'view_trip_playback' },
 
   // Finance
+  { label: 'Cash Payments', href: '/admin/finance/cash-payments', icon: '💵', department: 'finance', permission: 'manage_finance' },
   { label: 'Transactions', href: '/admin/finance/transactions', icon: '💳', department: 'finance', permission: 'manage_finance' },
   { label: 'Driver Earnings', href: '/admin/finance/earnings', icon: '💰', department: 'finance', permission: 'manage_finance' },
   { label: 'Commissions', href: '/admin/finance/commissions', icon: '📈', department: 'finance', permission: 'manage_pricing' },
@@ -691,6 +692,14 @@ export interface Ride {
   promo_discount?: number;
   accepted_at?: string;
   arrived_at?: string;
+  // Cash payment engine (confirm_cash_payment)
+  cash_received?: number;
+  change_amount?: number;
+  rider_credit_amount?: number;
+  cash_outstanding_amount?: number;
+  cash_confirmed_at?: string;
+  cash_confirmed_by?: string;
+  settlement_status?: string;
 }
 
 export interface Incident {

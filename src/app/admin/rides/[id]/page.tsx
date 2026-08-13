@@ -545,6 +545,44 @@ export default function RideDetailPage() {
                     );
                   })()}
                 </div>
+
+                {ride.payment_method === "cash" && (ride.cash_received != null) && (
+                  <div className="border rounded-lg divide-y mt-4">
+                    <div className="p-3 text-xs font-medium text-gray-400 uppercase bg-gray-50">Cash Collection</div>
+                    <div className="flex justify-between p-3 text-sm">
+                      <span className="text-gray-500">Cash Received</span>
+                      <span className="font-medium">{formatCurrency(ride.cash_received || 0)}</span>
+                    </div>
+                    {(ride.change_amount ?? 0) > 0 && (
+                      <div className="flex justify-between p-3 text-sm">
+                        <span className="text-gray-500">Change Given</span>
+                        <span>{formatCurrency(ride.change_amount || 0)}</span>
+                      </div>
+                    )}
+                    {(ride.rider_credit_amount ?? 0) > 0 && (
+                      <div className="flex justify-between p-3 text-sm text-blue-700 bg-blue-50">
+                        <span>Added to Rider Credit</span>
+                        <span>{formatCurrency(ride.rider_credit_amount || 0)}</span>
+                      </div>
+                    )}
+                    {(ride.cash_outstanding_amount ?? 0) > 0 && (
+                      <div className="flex justify-between p-3 text-sm text-amber-700 bg-amber-50">
+                        <span>Still Owed by Rider</span>
+                        <span>{formatCurrency(ride.cash_outstanding_amount || 0)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between p-3 text-sm">
+                      <span className="text-gray-500">Driver Settlement</span>
+                      <span className="capitalize">{ride.settlement_status?.replace(/_/g, " ") || "not required"}</span>
+                    </div>
+                    {ride.cash_confirmed_at && (
+                      <div className="flex justify-between p-3 text-sm">
+                        <span className="text-gray-500">Confirmed At</span>
+                        <span>{new Date(ride.cash_confirmed_at).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
