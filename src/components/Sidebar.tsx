@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Car } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -92,7 +92,8 @@ export default function Sidebar() {
       <div className="flex items-center justify-between p-4 border-b border-gray-800">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Car className="h-8 w-8 text-green-400" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/car-icon.png" alt="WeAfrica Ride" className="h-8 w-8 rounded-md bg-white object-cover shrink-0" />
             <div>
               <h1 className="text-sm font-bold">WeAfrica Ride</h1>
               <p className="text-xs text-gray-400">
@@ -103,7 +104,10 @@ export default function Sidebar() {
             </div>
           </div>
         )}
-        {collapsed && <Car className="h-8 w-8 text-green-400 mx-auto" />}
+        {collapsed && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/car-icon.png" alt="WeAfrica Ride" className="h-8 w-8 rounded-md bg-white object-cover mx-auto" />
+        )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="text-gray-400 hover:text-white ml-2"

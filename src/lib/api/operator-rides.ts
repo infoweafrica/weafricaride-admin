@@ -15,6 +15,21 @@ export type OperatorRideInput = {
   payment_method: string;
   city: string;
   operator_notes?: string;
+  request_source?: string;
+  // When set, dispatch only this driver — the RPC still rejects it if the
+  // driver's vehicle class isn't an exact match for vehicle_type.
+  driver_id?: string | null;
+};
+
+export type OperatorRideResult = {
+  ride_id: string;
+  status: string;
+  vehicle_class: string;
+  vehicle_label: string;
+  rider_pin: string;
+  customer_phone: string;
+  requests_sent: number;
+  driver_ids: string[];
 };
 
 export function estimateOperatorFare(input: OperatorRideInput) {
@@ -47,40 +62,37 @@ export function estimateOperatorFare(input: OperatorRideInput) {
   };
 }
 
-export async function createOperatorRide(input: OperatorRideInput) {
+// All validation (phone format, resolved coordinates, EXACT vehicle-class
+// availability) is enforced server-side by public.operator_create_ride —
+// see supabase/migrations/20260907160000_operator_booking_strict_validation.sql.
+// A "No WeAfrica X drivers are currently available in your area." rejection
+// comes back as error.message and no ride is created.
+export async function createOperatorRide(input: OperatorRideInput): Promise<OperatorRideResult> {
   const estimate = estimateOperatorFare(input);
 
-  const { data, error } = await supabase
-    .from("rides")
-    .insert({
-      rider_id: null,
-      driver_id: null,
-      pickup_address: input.pickup_address,
-      dropoff_address: input.dropoff_address,
-      pickup_lat: input.pickup_lat,
-      pickup_lng: input.pickup_lng,
-      dropoff_lat: input.dropoff_lat,
-      dropoff_lng: input.dropoff_lng,
-      status: "requested",
-      vehicle_type: input.vehicle_type,
-      fare: estimate.fare,
-      estimated_fare: estimate.estimated_fare,
-      distance_km: estimate.distance_km,
-      duration_min: estimate.duration_min,
-      payment_method: input.payment_method,
-      payment_status: "pending",
-      city: input.city,
-      request_source: "admin",
-      customer_name: input.customer_name,
-      customer_phone: input.customer_phone,
-      operator_notes: input.operator_notes ?? null,
-    })
-    .select("*")
-    .single();
+  const { data, error } = await supabase.rpc("operator_create_ride", {
+    p_customer_name: input.customer_name,
+    p_customer_phone: input.customer_phone,
+    p_pickup_address: input.pickup_address,
+    p_pickup_lat: input.pickup_lat,
+    p_pickup_lng: input.pickup_lng,
+    p_dropoff_address: input.dropoff_address,
+    p_dropoff_lat: input.dropoff_lat,
+    p_dropoff_lng: input.dropoff_lng,
+    p_vehicle_type: input.vehicle_type,
+    p_payment_method: input.payment_method,
+    p_city: input.city,
+    p_operator_notes: input.operator_notes ?? null,
+    p_request_source: input.request_source ?? "phone_call",
+    p_estimated_fare: estimate.estimated_fare,
+    p_distance_km: estimate.distance_km,
+    p_duration_min: estimate.duration_min,
+    p_driver_id: input.driver_id ?? null,
+  });
 
   if (error) throw new Error(error.message);
 
-  return data;
+  return data as OperatorRideResult;
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {

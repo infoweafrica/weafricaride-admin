@@ -5,15 +5,26 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { createOperatorRide, estimateOperatorFare } from "@/lib/api/operator-rides";
 import { supabase } from "@/lib/supabase";
+import { isValidMwPhone } from "@/lib/phone";
+import PermissionGuard from "@/components/guards/PermissionGuard";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 
 const LiveMapView = dynamic(() => import("../live-map/LiveMapView"), { ssr: false });
 
 export default function DispatchCenterPage() {
+  return (
+    <PermissionGuard permission="dispatch_rides">
+      <DispatchCenterPageInner />
+    </PermissionGuard>
+  );
+}
+
+function DispatchCenterPageInner() {
   const [form, setForm] = useState({
     customer_name: "",
     customer_phone: "",
-    pickup_address: "Lilongwe City Centre",
-    dropoff_address: "Area 18",
+    pickup_address: "",
+    dropoff_address: "",
     pickup_lat: -13.9626,
     pickup_lng: 33.7741,
     dropoff_lat: -13.935,
@@ -25,32 +36,46 @@ export default function DispatchCenterPage() {
     request_source: "phone_call",
   });
 
+  // The pickup/destination lat/lng above are only trustworthy once the
+  // operator has actually picked a geocoded suggestion. Booking is blocked
+  // until both are resolved (the server rejects unresolved coords anyway).
+  const [pickupResolved, setPickupResolved] = useState(false);
+  const [dropoffResolved, setDropoffResolved] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [drivers, setDrivers] = useState<any[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+  const [lastRideId, setLastRideId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const fetchDrivers = useCallback(async () => {
+    // `drivers.is_online` is the source of truth (set atomically by the
+    // driver_go_online/offline RPCs). driver_locations is populated
+    // separately by the client's GPS stream and can lag behind or be
+    // missing entirely (no fix yet, permission denied) — so it must only
+    // enrich position, never gate whether a driver is considered online.
     try {
       const res = await fetch("/api/drivers/operator-available");
       const body = await res.json();
       if (!res.ok) {
-        console.error("fetchDrivers failed", body.error);
+        console.error("fetchDrivers: operator-available request failed", body.error);
         setDrivers([]);
         return;
       }
       setDrivers(body.drivers || []);
     } catch (err) {
-      console.error("fetchDrivers failed", err);
+      console.error("fetchDrivers: operator-available request failed", err);
       setDrivers([]);
     }
   }, []);
 
+  // The anon client's postgres_changes subscription never fired here --
+  // Realtime enforces the same RLS as REST, and drivers/driver_locations
+  // have no anon/authenticated policy. Polling the service-role-backed
+  // route above is the simplest way to actually get live-ish updates.
   useEffect(() => {
     fetchDrivers();
-    // Driver identity/location now come from a server-side API route rather
-    // than a direct table subscription (see fetchDrivers), so we poll
-    // instead of a postgres_changes realtime channel.
     const interval = setInterval(fetchDrivers, 10000);
     return () => clearInterval(interval);
   }, [fetchDrivers]);
@@ -71,67 +96,63 @@ export default function DispatchCenterPage() {
   const currencyPrefix = form.city === "Cape Town" ? "R" : "MK";
   const selectedDriver = selectedDriverId ? drivers.find((d) => d.driver_id === selectedDriverId) : null;
 
-  async function submitRide() {
-    setLoading(true);
-    setMessage("");
-
+  async function cancelLastRide() {
+    if (!lastRideId) return;
+    setCancelling(true);
     try {
-      if (!form.customer_name || !form.customer_phone || !form.pickup_address || !form.dropoff_address) {
-        throw new Error("Customer name, phone, pickup, and destination are required.");
-      }
+      const { error } = await supabase.rpc("admin_cancel_ride", {
+        p_ride_id: lastRideId,
+        p_reason: "Cancelled by operator",
+      });
+      if (error) throw new Error(error.message);
+      setMessage(`Ride ${lastRideId} cancelled.`);
+      setLastRideId(null);
+    } catch (e: any) {
+      setMessage(e?.message ?? "Failed to cancel ride");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
-      const ride = await createOperatorRide(form);
-      const pin = String(Math.floor(1000 + Math.random() * 9000));
+  async function submitRide() {
+    setMessage("");
+    setLastRideId(null);
 
-      await supabase
-        .from("rides")
-        .update({
-          rider_pin: pin,
-          request_source: form.request_source,
-          status: "searching",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", ride.id);
+    if (!form.customer_name.trim()) {
+      setMessage("Customer name is required.");
+      return;
+    }
+    if (!isValidMwPhone(form.customer_phone)) {
+      setMessage("Enter a valid Malawi phone number — +265 followed by 9 digits starting 8 or 9.");
+      return;
+    }
+    if (!pickupResolved || !dropoffResolved) {
+      setMessage("Pick both the pickup and the destination from the address suggestions so the trip has real coordinates.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Everything below (phone format, coordinates, EXACT vehicle-class
+      // availability) is re-validated and enforced by operator_create_ride.
+      // If no driver of the requested class is available it raises
+      // "No WeAfrica X drivers are currently available in your area." and
+      // nothing is created.
+      const res = await createOperatorRide({ ...form, driver_id: selectedDriverId });
 
       if (selectedDriverId) {
         const selected = drivers.find((d) => d.driver_id === selectedDriverId);
-
-        const { error: reqErr } = await supabase.from("ride_requests").insert({
-          ride_id: ride.id,
-          driver_id: selectedDriverId,
-          rider_id: ride.rider_id || null,
-          pickup_address: form.pickup_address,
-          pickup_lat: form.pickup_lat,
-          pickup_lng: form.pickup_lng,
-          destination_address: form.dropoff_address,
-          destination_lat: form.dropoff_lat,
-          destination_lng: form.dropoff_lng,
-          status: "pending",
-          vehicle_class: form.vehicle_type,
-          estimated_fare: estimate.estimated_fare,
-          payment_method: form.payment_method,
-          expires_at: new Date(Date.now() + 30000).toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-        if (reqErr) throw new Error(reqErr.message);
-
-        await supabase
-          .from("rides")
-          .update({
-            driver_id: selectedDriverId,
-            status: "searching",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", ride.id);
-
-        setMessage(`Ride sent to ${selected?.driver_name || "driver"}. PIN: ${pin}. Ride ID: ${ride.id}`);
+        setMessage(
+          `Ride sent to ${selected?.driver_name || "driver"} (WeAfrica ${res.vehicle_label}). ` +
+            `PIN: ${res.rider_pin}. Ride ID: ${res.ride_id}`,
+        );
       } else {
-        const { error: rpcErr } = await supabase.rpc("assign_driver", { p_ride_id: ride.id });
-        if (rpcErr) throw new Error(rpcErr.message);
-        setMessage(`Ride created and auto-dispatched. PIN: ${pin}. Ride ID: ${ride.id}`);
+        setMessage(
+          `Ride created — ${res.requests_sent} WeAfrica ${res.vehicle_label} driver(s) notified. ` +
+            `PIN: ${res.rider_pin}. Ride ID: ${res.ride_id}`,
+        );
       }
+      setLastRideId(res.ride_id);
     } catch (e: any) {
       setMessage(e?.message ?? "Failed to create ride");
     } finally {
@@ -143,8 +164,20 @@ export default function DispatchCenterPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Address autocomplete only fires lat/lng when an actual suggestion is
+  // picked (free typing just updates the text, same as before) — so this
+  // only overwrites the coordinates when they're actually provided.
+  function updateAddress(prefix: "pickup" | "dropoff", address: string, lat?: number, lng?: number) {
+    setForm((prev) => ({
+      ...prev,
+      [`${prefix}_address`]: address,
+      ...(lat !== undefined ? { [`${prefix}_lat`]: lat } : {}),
+      ...(lng !== undefined ? { [`${prefix}_lng`]: lng } : {}),
+    }));
+  }
+
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-orange-50/30 to-white p-6 space-y-6">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50/30 to-white p-6 space-y-6">
       <div className="rounded-3xl border bg-white/80 backdrop-blur p-6 shadow-sm flex items-center justify-between">
         <div>
         <h1 className="text-3xl font-black tracking-tight text-slate-900">Operator Dispatch Center</h1>
@@ -152,7 +185,7 @@ export default function DispatchCenterPage() {
           Create rides, select drivers, generate PINs, and dispatch requests in real time.
         </p>
         </div>
-        <div className="hidden md:block rounded-2xl bg-orange-500 px-5 py-3 text-white font-bold shadow-sm">Live Dispatch</div>
+        <div className="hidden md:block rounded-2xl bg-green-500 px-5 py-3 text-white font-bold shadow-sm">Live Dispatch</div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -161,10 +194,31 @@ export default function DispatchCenterPage() {
 
           <div className="grid grid-cols-1 gap-4">
             <Input label="Customer name" value={form.customer_name} onChange={(v: string) => update("customer_name", v)} />
-            <Input label="Customer phone" value={form.customer_phone} onChange={(v: string) => update("customer_phone", v)} />
+            <div>
+              <Input label="Customer phone" value={form.customer_phone} onChange={(v: string) => update("customer_phone", v)} />
+              {form.customer_phone.trim() !== "" && !isValidMwPhone(form.customer_phone) && (
+                <p className="mt-1 text-xs font-medium text-red-500">
+                  Not a valid Malawi mobile number (+265, 9 digits starting 8 or 9).
+                </p>
+              )}
+            </div>
 
-            <Input label="Pickup address" value={form.pickup_address} onChange={(v: string) => update("pickup_address", v)} />
-            <Input label="Destination address" value={form.dropoff_address} onChange={(v: string) => update("dropoff_address", v)} />
+            <div>
+              <AddressAutocomplete label="Pickup address" value={form.pickup_address}
+                onChange={(address, lat, lng) => updateAddress("pickup", address, lat, lng)}
+                onResolvedChange={setPickupResolved} />
+              {form.pickup_address.trim() !== "" && !pickupResolved && (
+                <p className="mt-1 text-xs font-medium text-amber-600">Select a suggestion to lock in the pickup location.</p>
+              )}
+            </div>
+            <div>
+              <AddressAutocomplete label="Destination address" value={form.dropoff_address}
+                onChange={(address, lat, lng) => updateAddress("dropoff", address, lat, lng)}
+                onResolvedChange={setDropoffResolved} />
+              {form.dropoff_address.trim() !== "" && !dropoffResolved && (
+                <p className="mt-1 text-xs font-medium text-amber-600">Select a suggestion to lock in the destination.</p>
+              )}
+            </div>
 
 
 
@@ -208,27 +262,31 @@ export default function DispatchCenterPage() {
               ]}
             />
 
-            <Select label="Request source" value={form.request_source} onChange={(v: string) => update("request_source", v)}
-              options={[
-                ["phone_call", "Phone Call"],
-                ["whatsapp", "WhatsApp"],
-                ["walk_in", "Walk-in"],
-                ["hotel", "Hotel Concierge"],
-              ]}
-            />
-
             <Input label="Operator notes" value={form.operator_notes} onChange={(v: string) => update("operator_notes", v)} />
           </div>
 
           <button
             onClick={submitRide}
-            disabled={loading}
-            className="w-full rounded-2xl bg-orange-500 px-5 py-4 text-white font-bold shadow-lg shadow-orange-200 hover:bg-orange-600 disabled:opacity-50"
+            disabled={loading || !form.customer_name.trim() || !isValidMwPhone(form.customer_phone) || !pickupResolved || !dropoffResolved}
+            className="w-full rounded-2xl bg-green-500 px-5 py-4 text-white font-bold shadow-lg shadow-green-200 hover:bg-green-600 disabled:opacity-50"
           >
             {loading ? "Creating..." : "Create Ride Request"}
           </button>
 
-          {message && <p className="rounded-xl bg-orange-50 border border-orange-200 p-3 text-sm font-semibold text-orange-700">{message}</p>}
+          {message && (
+            <div className="rounded-xl bg-green-50 border border-green-200 p-3 space-y-2">
+              <p className="text-sm font-semibold text-green-700">{message}</p>
+              {lastRideId && (
+                <button
+                  onClick={cancelLastRide}
+                  disabled={cancelling}
+                  className="w-full rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {cancelling ? "Cancelling..." : "Cancel This Ride"}
+                </button>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="xl:col-span-6 rounded-3xl border bg-white p-3 min-h-[650px] shadow-sm">
@@ -277,13 +335,13 @@ export default function DispatchCenterPage() {
               {drivers.length === 0 ? (
                 <p className="text-sm text-gray-500">No online drivers found.</p>
               ) : drivers.map((driver) => (
-                <div key={driver.driver_id} className={`rounded-xl border p-3 text-sm ${selectedDriverId === driver.driver_id ? "border-orange-500 bg-orange-50" : "bg-white"}`}>
+                <div key={driver.driver_id} className={`rounded-xl border p-3 text-sm ${selectedDriverId === driver.driver_id ? "border-green-500 bg-green-50" : "bg-white"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-semibold">{driver.driver_name}</p>
                       <p className="text-xs text-gray-500">{driver.plate || "No plate"} · {driver.vehicle || "Vehicle"}</p>
                     </div>
-                    <button onClick={() => setSelectedDriverId(driver.driver_id)} className="rounded-xl bg-orange-500 px-4 py-2 text-xs font-bold text-white hover:bg-orange-600">
+                    <button onClick={() => setSelectedDriverId(driver.driver_id)} className="rounded-xl bg-green-500 px-4 py-2 text-xs font-bold text-white hover:bg-green-600">
                       Select
                     </button>
                   </div>
@@ -309,7 +367,7 @@ function Input({ label, value, onChange, type = "text" }: any) {
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-orange-400"
+        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-green-400"
       />
     </label>
   );
@@ -322,7 +380,7 @@ function Select({ label, value, onChange, options }: any) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-orange-400"
+        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-green-400"
       >
         {options.map(([v, l]: any) => <option key={v} value={v}>{l}</option>)}
       </select>

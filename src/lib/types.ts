@@ -164,6 +164,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: '📊', department: 'operations', permission: 'view_analytics' },
   { label: 'Live Map', href: '/admin/operations/live-map', icon: '🗺️', department: 'operations', permission: 'view_live_map' },
   { label: 'Rides', href: '/admin/rides', icon: '🚗', department: 'operations', permission: 'manage_rides' },
+  { label: 'Deliveries', href: '/admin/operations/deliveries', icon: '📦', department: 'operations', permission: 'manage_rides' },
   { label: 'Dispatch Queue', href: '/admin/operations/dispatch', icon: '📡', department: 'operations', permission: 'dispatch_rides' },
   { label: 'Operator Booking', href: '/admin/operations/operator-booking', icon: '☎️', department: 'operations', permission: 'dispatch_rides' },
   { label: 'Fleet Monitoring', href: '/admin/operations/fleet-monitoring', icon: '📋', department: 'operations', permission: 'view_live_map' },
@@ -187,7 +188,6 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Trip Playback', href: '/admin/safety/playback', icon: '▶️', department: 'safety', permission: 'view_trip_playback' },
 
   // Finance
-  { label: 'Cash Payments', href: '/admin/finance/cash-payments', icon: '💵', department: 'finance', permission: 'manage_finance' },
   { label: 'Transactions', href: '/admin/finance/transactions', icon: '💳', department: 'finance', permission: 'manage_finance' },
   { label: 'Driver Earnings', href: '/admin/finance/earnings', icon: '💰', department: 'finance', permission: 'manage_finance' },
   { label: 'Commissions', href: '/admin/finance/commissions', icon: '📈', department: 'finance', permission: 'manage_pricing' },
@@ -196,7 +196,6 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Wallets', href: '/admin/finance/wallets', icon: '🏦', department: 'finance', permission: 'manage_finance' },
   { label: 'Reconciliation', href: '/admin/finance/reconciliation', icon: '🔄', department: 'finance', permission: 'manage_finance' },
   { label: 'Pricing', href: '/admin/finance/pricing', icon: '🏷️', department: 'finance', permission: 'manage_pricing' },
-  { label: 'Corporate Accounts', href: '/admin/finance/corporate-accounts', icon: '🏢', department: 'finance', permission: 'manage_finance' },
 
   // Support
   { label: 'Tickets', href: '/admin/support/tickets', icon: '🎫', department: 'support', permission: 'manage_support' },
@@ -217,6 +216,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
   { label: 'Driver Missions', href: '/admin/marketing/driver-missions', icon: '🎖️', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Demand Events', href: '/admin/marketing/events', icon: '📈', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Referrals', href: '/admin/marketing/referrals', icon: '🎁', department: 'marketing', permission: 'manage_promotions' },
+  { label: 'Corporate Accounts', href: '/admin/marketing/corporate-accounts', icon: '🏢', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Content Moderation', href: '/admin/marketing/moderation', icon: '🖼️', department: 'marketing', permission: 'moderate_content' },
 
   // Analytics
@@ -300,7 +300,7 @@ export type RideStatus =
   | 'no_drivers'
   | 'scheduled';
 
-export type PaymentMethod = 'cash' | 'mobile_money' | 'airtel_money' | 'tnm_mpamba' | 'card' | 'wallet' | 'corporate';
+export type PaymentMethod = 'cash' | 'mobile_money' | 'airtel_money' | 'tnm_mpamba' | 'card' | 'wallet';
 export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded' | 'paid';
 
 export type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -400,75 +400,6 @@ export interface AdminPermission {
   id: string;
   name: Permission;
   description?: string;
-  created_at: string;
-}
-
-// ─── CORPORATE ACCOUNT TYPES ──────────────────────────
-
-export type CorporateBillingMethod = 'corporate_wallet' | 'monthly_invoice';
-export type CorporateAccountStatus = 'active' | 'suspended';
-export type CorporateMemberRole = 'owner' | 'admin' | 'finance' | 'employee';
-export type CorporateInvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
-export type CorporateInvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue';
-
-export interface CorporateAccount {
-  id: string;
-  name: string;
-  registration_number?: string | null;
-  billing_email: string;
-  finance_email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  billing_method: CorporateBillingMethod;
-  wallet_balance: number;
-  credit_limit?: number | null;
-  daily_employee_limit?: number | null;
-  monthly_account_limit?: number | null;
-  allowed_vehicle_classes?: string[] | null;
-  status: CorporateAccountStatus;
-  invoice_frequency: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CorporateAccountMember {
-  id: string;
-  corporate_account_id: string;
-  rider_id: string;
-  role: CorporateMemberRole;
-  daily_limit_override?: number | null;
-  status: CorporateAccountStatus;
-  joined_at: string;
-  invited_by?: string | null;
-  rider?: { full_name?: string; phone?: string; email?: string } | null;
-}
-
-export interface CorporateInvitation {
-  id: string;
-  corporate_account_id: string;
-  email: string;
-  role: CorporateMemberRole;
-  invite_code: string;
-  status: CorporateInvitationStatus;
-  invited_by?: string | null;
-  expires_at: string;
-  accepted_by?: string | null;
-  accepted_at?: string | null;
-  created_at: string;
-}
-
-export interface CorporateInvoice {
-  id: string;
-  corporate_account_id: string;
-  period_start: string;
-  period_end: string;
-  status: CorporateInvoiceStatus;
-  total_amount: number;
-  issued_at?: string | null;
-  due_at?: string | null;
-  paid_at?: string | null;
-  sent_at?: string | null;
-  sent_to?: string | null;
   created_at: string;
 }
 
@@ -761,14 +692,6 @@ export interface Ride {
   promo_discount?: number;
   accepted_at?: string;
   arrived_at?: string;
-  // Cash payment engine (confirm_cash_payment)
-  cash_received?: number;
-  change_amount?: number;
-  rider_credit_amount?: number;
-  cash_outstanding_amount?: number;
-  cash_confirmed_at?: string;
-  cash_confirmed_by?: string;
-  settlement_status?: string;
 }
 
 export interface Incident {
@@ -1110,6 +1033,9 @@ export interface RideCategory {
 export interface Rider {
   id: string;
   user_id: string;
+  // Identity/status live on the linked users row (riders itself has no
+  // phone/email/full_name/status columns) -- the API layer joins and
+  // flattens them here so callers don't need to reach into `user`.
   phone?: string;
   email?: string;
   full_name: string;
@@ -1120,7 +1046,8 @@ export interface Rider {
   home_address?: string;
   work_address?: string;
   referral_code?: string;
-  is_phone_verified: boolean;
+  // There is no phone-verification tracking anywhere in the schema, so
+  // unlike email/id there is no is_phone_verified here.
   is_email_verified: boolean;
   is_id_verified: boolean;
   created_at: string;
@@ -1138,5 +1065,76 @@ export interface WalletTransaction {
   amount: number;
   reference?: string;
   description?: string;
+  created_at: string;
+}
+
+// Corporate Account & Billing Engine — see
+// supabase/migrations/20260814000100_corporate_accounts.sql for the
+// underlying schema this mirrors.
+export type CorporateMemberRole = 'owner' | 'admin' | 'finance' | 'employee';
+export type CorporateBillingMethod = 'corporate_wallet' | 'monthly_invoice';
+export type CorporateAccountStatus = 'active' | 'suspended';
+export type CorporateInvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+export type CorporateInvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue';
+
+export interface CorporateAccount {
+  id: string;
+  name: string;
+  registration_number: string | null;
+  billing_email: string;
+  finance_email: string | null;
+  phone: string | null;
+  address: string | null;
+  billing_method: CorporateBillingMethod;
+  wallet_balance: number;
+  credit_limit: number | null;
+  daily_employee_limit: number | null;
+  monthly_account_limit: number | null;
+  allowed_vehicle_classes: string[] | null;
+  status: CorporateAccountStatus;
+  invoice_frequency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CorporateAccountMember {
+  id: string;
+  corporate_account_id: string;
+  rider_id: string;
+  role: CorporateMemberRole;
+  daily_limit_override: number | null;
+  status: 'active' | 'suspended';
+  joined_at: string;
+  invited_by: string | null;
+  // Supabase join field (riders -> users)
+  rider?: { full_name?: string | null; phone?: string | null; email?: string | null } | null;
+}
+
+export interface CorporateInvitation {
+  id: string;
+  corporate_account_id: string;
+  email: string;
+  role: CorporateMemberRole;
+  invite_code: string;
+  status: CorporateInvitationStatus;
+  invited_by: string | null;
+  expires_at: string;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  created_at: string;
+}
+
+export interface CorporateInvoice {
+  id: string;
+  corporate_account_id: string;
+  period_start: string;
+  period_end: string;
+  status: CorporateInvoiceStatus;
+  total_amount: number;
+  issued_at: string | null;
+  due_at: string | null;
+  paid_at: string | null;
+  sent_at: string | null;
+  sent_to: string | null;
   created_at: string;
 }
