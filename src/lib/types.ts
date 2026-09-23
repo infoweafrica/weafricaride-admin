@@ -205,6 +205,7 @@ export const DEPARTMENT_NAV: NavItem[] = [
 
   // Marketing
   { label: 'Marketing Dashboard', href: '/admin/marketing/dashboard', icon: '📢', department: 'marketing', permission: 'manage_promotions' },
+{ label: 'Social Marketing', href: '/admin/marketing/social-accounts', icon: '📣', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Promo Codes', href: '/admin/marketing/promos', icon: '🏷️', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Campaigns', href: '/admin/marketing/campaigns', icon: '🎯', department: 'marketing', permission: 'manage_promotions' },
   { label: 'Push Notifications', href: '/admin/marketing/notifications', icon: '🔔', department: 'marketing', permission: 'manage_notifications' },
@@ -745,24 +746,13 @@ export interface SupportTicket {
 export interface PromoCode {
   id: string;
   code: string;
-  type: PromoType;
-  value: number;
-  min_order?: number;
-  max_discount?: number;
-  max_uses?: number;
-  current_uses: number;
-  recipient_type: PromoRecipient;
-  recipient_ids?: string[];
-  city?: City;
-  applicable_cities?: string[] | null;
-  applicable_vehicle_types?: string[] | null;
-  first_ride_only?: boolean;
-  visible?: boolean;
-  status: PromoStatus;
-  starts_at?: string;
-  expires_at?: string;
+  discount_type: 'percentage' | 'fixed' | 'free_ride' | string;
+  discount_value: number;
+  status: 'active' | 'scheduled' | 'expired' | 'disabled' | string;
+  visible: boolean;
+  starts_at?: string | null;
+  expires_at?: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Transaction {
