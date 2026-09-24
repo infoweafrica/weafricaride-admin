@@ -142,6 +142,57 @@ Deno.serve(async (req: Request) => {
     }
   };
 
+  // Trip pushes (ride request / trip-status) keep the loud ride ringtone;
+  // everything else is a general notification -> branded blip channel.
+  const d = payload.data || {};
+  const isTrip = "ride_id" in d || "request_id" in d || "trip_id" in d;
+  // A NEW ride request dispatched to a driver (trg_notify_new_ride_request
+  // sends request_id). Trip-status pushes to the rider (trip_id only) are
+  // NOT this — they keep a normal notification block.
+  const isDriverRequest = "request_id" in d;
+  const androidChannelId = isTrip ? "ride_requests" : "general_notifications";
+  const androidSound = isTrip ? "default" : "wa_notification";
+
+  // The driver-request push goes **data-only** (no `notification` block):
+  // with a notification block Android auto-draws a plain tray notification
+  // when the app is backgrounded/killed and never lets the app upgrade it.
+  // Data-only guarantees driverFirebaseMessagingBackgroundHandler runs, so
+  // it can put up the full-screen-intent incoming-trip notification (over
+  // other apps, like an incoming call). Title/body ride along in `data`.
+  const dataPayload: Record<string, string> = { ...d };
+  if (isDriverRequest) {
+    dataPayload.title = payload.title;
+    dataPayload.body = payload.body;
+  }
+  const fcmMessage: Record<string, unknown> = {
+    token: payload.fcm_token,
+    data: dataPayload,
+    android: {
+      priority: "high",
+      ...(isDriverRequest
+        ? {}
+        : {
+            notification: {
+              channel_id: androidChannelId,
+              sound: androidSound,
+              default_vibrate_timings: true,
+            },
+          }),
+    },
+    apns: {
+      headers: { "apns-priority": "10" },
+      payload: {
+        aps: {
+          sound: isTrip ? "default" : "wa_notification.wav",
+          ...(isDriverRequest ? { "content-available": 1 } : {}),
+        },
+      },
+    },
+  };
+  if (!isDriverRequest) {
+    fcmMessage.notification = { title: payload.title, body: payload.body };
+  }
+
   try {
     const accessToken = await getAccessToken(sa);
 
@@ -153,15 +204,7 @@ Deno.serve(async (req: Request) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          message: {
-            token: payload.fcm_token,
-            notification: { title: payload.title, body: payload.body },
-            data: payload.data || {},
-            android: { priority: "high" },
-            apns: { headers: { "apns-priority": "10" } },
-          },
-        }),
+        body: JSON.stringify({ message: fcmMessage }),
       }
     );
 

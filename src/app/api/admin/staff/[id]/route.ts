@@ -81,6 +81,19 @@ export async function DELETE(
   const db = getServiceClient();
   const { error } = await db.from("admin_users").delete().eq("id", id);
   if (error) {
+    // 20+ tables reference admin_users.id (audit logs, disputes, refunds,
+    // support tickets, marketing campaigns, ...) as an actor/approver
+    // column, almost all NO ACTION on delete — any admin who's done real
+    // work in the system will hit this. Deleting the cascade behavior on
+    // that many financial/audit tables isn't a call to make from this
+    // route; suspending (already supported) is the actual way to remove
+    // someone's access without breaking historical records.
+    if (error.code === "23503") {
+      return NextResponse.json(
+        { error: "This staff member has activity on their record (audit logs, tickets, approvals, etc.) and can't be permanently deleted. Suspend their account instead to remove access." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

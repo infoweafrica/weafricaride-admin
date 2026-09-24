@@ -2,7 +2,17 @@
 import { useState } from "react";
 import { Search, Plus } from "lucide-react";
 
+import PermissionGuard from "@/components/guards/PermissionGuard";
+
 export default function Page() {
+  return (
+    <PermissionGuard permission="manage_promotions">
+      <ReferralsPageInner />
+    </PermissionGuard>
+  );
+}
+
+function ReferralsPageInner() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

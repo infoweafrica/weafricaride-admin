@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Vehicle } from "@/lib/types";
 import {
   Search,
@@ -60,6 +61,14 @@ function legacyTierForClassSlug(slug?: string | null): string {
 }
 
 export default function VehiclesPage() {
+  return (
+    <PermissionGuard permission="approve_vehicles">
+      <VehiclesPageInner />
+    </PermissionGuard>
+  );
+}
+
+function VehiclesPageInner() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
   const [search, setSearch] = useState("");
@@ -455,7 +464,7 @@ export default function VehiclesPage() {
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={() => { setSelectedVehicle(v); setShowDetailModal(true); setDetailTab("info"); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="View"><Eye className="h-4 w-4" /></button>
                               {v.driver_id ? <button onClick={() => handleUnassignDriver(v.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-600" title="Unassign"><UserMinus className="h-4 w-4" /></button> : <button onClick={() => { setSelectedVehicle(v); setShowAssignModal(true); }} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Assign"><UserPlus className="h-4 w-4" /></button>}
-                              {v.is_active ? <button onClick={() => handleSuspend(v.id)} className="p-1.5 hover:bg-orange-50 rounded-lg text-orange-600" title="Suspend"><Ban className="h-4 w-4" /></button> : <button onClick={() => handleApprove(v.id)} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Activate"><CheckCircle className="h-4 w-4" /></button>}
+                              {v.is_active ? <button onClick={() => handleSuspend(v.id)} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Suspend"><Ban className="h-4 w-4" /></button> : <button onClick={() => handleApprove(v.id)} className="p-1.5 hover:bg-green-50 rounded-lg text-green-600" title="Activate"><CheckCircle className="h-4 w-4" /></button>}
                             </div>
                           </td>
                         </tr>

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PermissionGuard from "@/components/guards/PermissionGuard";
-import { supabase } from "@/lib/supabase";
 import { RefreshCw, Ticket, Search } from "lucide-react";
 import type { SupportTicket, TicketStatus, TicketPriority } from "@/lib/types";
 
@@ -16,7 +15,7 @@ const STATUS_COLORS: Record<TicketStatus, string> = {
 const PRIORITY_COLORS: Record<TicketPriority, string> = {
   low: "bg-gray-100 text-gray-600",
   medium: "bg-blue-100 text-blue-600",
-  high: "bg-orange-100 text-orange-700",
+  high: "bg-green-100 text-green-700",
   urgent: "bg-red-100 text-red-700",
 };
 
@@ -29,36 +28,36 @@ export default function TicketsPage() {
 }
 
 function TicketsContent() {
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [allTickets, setAllTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TicketStatus | "all">("all");
 
+  // Always fetched unfiltered -- filter only narrows the displayed list
+  // client-side (see displayedTickets below), so the stat tiles above
+  // (Total/Resolved/Closed) always reflect true totals instead of
+  // whatever subset the currently-selected tab happened to narrow the
+  // fetch down to.
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase
-        .from("support_tickets")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (filter !== "all") query = query.eq("status", filter);
-
-      const { data, error: err } = await query;
-      if (err) throw new Error(err.message);
-      setTickets((data as SupportTicket[]) || []);
+      const res = await fetch("/api/admin/support-tickets?status=all");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load tickets");
+      setAllTickets((body.data as SupportTicket[]) || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load tickets");
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
-  const openCount = tickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
+  const tickets = filter === "all" ? allTickets : allTickets.filter((t) => t.status === filter);
+
+  const openCount = allTickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
 
   return (
     <div className="space-y-6">
@@ -73,10 +72,10 @@ function TicketsContent() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard label="Total" value={tickets.length} color="text-gray-700" />
+        <StatCard label="Total" value={allTickets.length} color="text-gray-700" />
         <StatCard label="Open / In Progress" value={openCount} color="text-amber-600" />
-        <StatCard label="Resolved" value={tickets.filter((t) => t.status === "resolved").length} color="text-green-600" />
-        <StatCard label="Closed" value={tickets.filter((t) => t.status === "closed").length} color="text-gray-600" />
+        <StatCard label="Resolved" value={allTickets.filter((t) => t.status === "resolved").length} color="text-green-600" />
+        <StatCard label="Closed" value={allTickets.filter((t) => t.status === "closed").length} color="text-gray-600" />
       </div>
 
       <div className="flex gap-2 flex-wrap">

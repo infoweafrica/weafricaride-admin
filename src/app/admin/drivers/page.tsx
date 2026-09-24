@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { ErrorBoundary, ApiErrorDisplay, EmptyState } from "@/components/ErrorBoundary";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { useCityContext } from "@/lib/city-context";
 import Pagination from "@/components/Pagination";
 import {
@@ -35,6 +36,7 @@ import type { Driver } from "@/lib/types";
 import {
   fetchDrivers,
   approveDriver,
+  updateDriverDateOfBirth,
   rejectDriver,
   suspendDriver,
   forceDriverOffline,
@@ -76,9 +78,11 @@ type DriverTab = "overview" | "all" | "verification" | "earnings" | "live" | "an
 
 export default function DriversPage() {
   return (
-    <ErrorBoundary>
-      <DriversContent />
-    </ErrorBoundary>
+    <PermissionGuard permission="manage_drivers">
+      <ErrorBoundary>
+        <DriversContent />
+      </ErrorBoundary>
+    </PermissionGuard>
   );
 }
 
@@ -132,7 +136,11 @@ function DriversContent() {
     setError(null);
 
     try {
-      const cityFilter = selectedCityId || undefined;
+      // drivers.city_id is never actually populated (every real driver row
+      // has it null; only the free-text `city` column is set) -- filtering
+      // by city_id always returned zero drivers for any city. Filtering by
+      // the resolved city name instead, against the real data.
+      const cityFilter = selectedCityName === "All Cities" ? undefined : selectedCityName;
 
       // Map filter values for the API
       const approvalStatusProp = approvalFilter === "all" ? "" : approvalFilter;
@@ -203,6 +211,20 @@ function DriversContent() {
     setActionLoading(driverId);
     if (await approveDriver(driverId)) loadData();
     setActionLoading(null);
+  };
+
+  const [dobInput, setDobInput] = useState("");
+  const [savingDob, setSavingDob] = useState(false);
+
+  const handleSaveDob = async () => {
+    if (!selectedDriver || !dobInput) return;
+    setSavingDob(true);
+    const ok = await updateDriverDateOfBirth(selectedDriver.id, dobInput);
+    if (ok) {
+      setSelectedDriver({ ...selectedDriver, date_of_birth: dobInput });
+      loadData();
+    }
+    setSavingDob(false);
   };
 
   const handleReject = async () => {
@@ -280,7 +302,7 @@ function DriversContent() {
         // Enrich with driver names from existing drivers list
         const nameMap: Record<string, string> = {};
         drivers.forEach((d) => {
-          if (d.id && d.user?.full_name) nameMap[d.id] = d.user.full_name;
+          if (d.id && d.full_name) nameMap[d.id] = d.full_name;
         });
         setLiveLocations(mapped.map((d: DriverLocation) => ({
           ...d,
@@ -306,7 +328,7 @@ function DriversContent() {
     if (drivers.length === 0 || liveLocations.length === 0) return;
     const nameMap: Record<string, string> = {};
     drivers.forEach((d) => {
-      if (d.id && d.user?.full_name) nameMap[d.id] = d.user.full_name;
+      if (d.id && d.full_name) nameMap[d.id] = d.full_name;
     });
     setLiveLocations((prev) =>
       prev.map((loc) => ({
@@ -386,7 +408,7 @@ function DriversContent() {
               <div className="space-y-2">
                 {topDrivers.slice(0, 5).map((d, i) => (
                   <div key={d.id} className="flex items-center justify-between text-xs">
-                    <span>{d.user?.full_name || "Unknown"}</span>
+                    <span>{d.full_name || "Unknown"}</span>
                     <span className="text-gray-500">{d.total_rides || 0} rides</span>
                   </div>
                 ))}
@@ -448,17 +470,17 @@ function DriversContent() {
                             <div className="flex items-center gap-3">
                               <div className="relative">
                                 <div className="h-9 w-9 bg-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                                  {driver.user?.full_name?.charAt(0) || "D"}
+                                  {driver.full_name?.charAt(0) || "D"}
                                 </div>
                                 <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white ${driver.is_online ? "bg-green-500" : "bg-gray-400"}`} />
                               </div>
                               <div>
-                                <p className="font-medium text-gray-900">{driver.user?.full_name || "Unknown"}</p>
-                                <p className="text-xs text-gray-400">{driver.driver_license_number || "No license"}</p>
+                                <p className="font-medium text-gray-900">{driver.full_name || "Unknown"}</p>
+                                <p className="text-xs text-gray-400">{(driver.license_number || driver.driver_license_number) || "No license"}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{driver.user?.phone || "N/A"}</td>
+                          <td className="px-4 py-3 text-xs text-gray-500">{driver.phone || "N/A"}</td>
                           <td className="px-4 py-3 text-xs text-gray-500">
                             {driver.vehicle ? <>{driver.vehicle.plate_number}<br />{driver.vehicle.make} {driver.vehicle.model}</> : "No vehicle"}
                           </td>
@@ -471,7 +493,7 @@ function DriversContent() {
                               <button onClick={() => { setSelectedDriver(driver); setShowDetail(true); setDetailTab("details"); }} className="p-1.5 hover:bg-gray-100 rounded text-gray-500"><Eye className="h-4 w-4" /></button>
                               {driver.is_online && <button onClick={() => handleForceOffline(driver.id)} className="p-1.5 hover:bg-red-50 rounded text-red-600"><XCircle className="h-4 w-4" /></button>}
                               {driver.approval_status === "pending" && <><button onClick={() => handleApprove(driver.id)} className="p-1.5 hover:bg-green-50 rounded text-green-600"><CheckCircle className="h-4 w-4" /></button><button onClick={() => { setSelectedDriver(driver); setShowReject(true); }} className="p-1.5 hover:bg-red-50 rounded text-red-600"><XCircle className="h-4 w-4" /></button></>}
-                              {driver.approval_status === "approved" && <button onClick={() => { setSelectedDriver(driver); setShowSuspend(true); }} className="p-1.5 hover:bg-orange-50 rounded text-orange-600"><Ban className="h-4 w-4" /></button>}
+                              {driver.approval_status === "approved" && <button onClick={() => { setSelectedDriver(driver); setShowSuspend(true); }} className="p-1.5 hover:bg-green-50 rounded text-green-600"><Ban className="h-4 w-4" /></button>}
                             </div>
                           </td>
                         </tr>
@@ -503,8 +525,8 @@ function DriversContent() {
                 <tbody>
                   {drivers.filter(d => d.approval_status === "pending").slice(0, 20).map(driver => (
                     <tr key={driver.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-xs">{driver.user?.full_name}</td>
-                      <td className="px-4 py-3 text-xs">{driver.driver_license_number || "—"}</td>
+                      <td className="px-4 py-3 font-medium text-xs">{driver.full_name}</td>
+                      <td className="px-4 py-3 text-xs">{(driver.license_number || driver.driver_license_number) || "—"}</td>
                       <td className="px-4 py-3"><span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending Review</span></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -532,7 +554,7 @@ function DriversContent() {
                 <tbody>
                   {topEarners.slice(0, 20).map(driver => (
                     <tr key={driver.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-xs">{driver.user?.full_name}</td>
+                      <td className="px-4 py-3 font-medium text-xs">{driver.full_name}</td>
                       <td className="px-4 py-3 text-xs text-green-600">{formatCurrency(driver.available_balance || 0)}</td>
                       <td className="px-4 py-3 text-xs text-amber-600">{formatCurrency(driver.pending_balance || 0)}</td>
                       <td className="px-4 py-3 text-xs">{formatCurrency(driver.cash_collected || 0)}</td>
@@ -582,7 +604,7 @@ function DriversContent() {
             <h3 className="text-sm font-semibold mb-3">Top Drivers by Rides</h3>
             <div className="space-y-3">
               {topDrivers.map((d, i) => (
-                <div key={d.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400 w-4">#{i+1}</span><span className="text-xs font-medium">{d.user?.full_name}</span></div><span className="text-xs text-gray-500">{d.total_rides || 0} rides</span></div>
+                <div key={d.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400 w-4">#{i+1}</span><span className="text-xs font-medium">{d.full_name}</span></div><span className="text-xs text-gray-500">{d.total_rides || 0} rides</span></div>
               ))}
             </div>
           </div>
@@ -590,7 +612,7 @@ function DriversContent() {
             <h3 className="text-sm font-semibold mb-3">Top Earners</h3>
             <div className="space-y-3">
               {topEarners.map((d, i) => (
-                <div key={d.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400 w-4">#{i+1}</span><span className="text-xs font-medium">{d.user?.full_name}</span></div><span className="text-xs text-green-600 font-medium">{formatCurrency(d.total_earnings || 0)}</span></div>
+                <div key={d.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400 w-4">#{i+1}</span><span className="text-xs font-medium">{d.full_name}</span></div><span className="text-xs text-green-600 font-medium">{formatCurrency(d.total_earnings || 0)}</span></div>
               ))}
             </div>
           </div>
@@ -604,17 +626,17 @@ function DriversContent() {
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <div className="h-12 w-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-lg font-medium">{selectedDriver.user?.full_name?.charAt(0)}</div>
+                  <div className="h-12 w-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-lg font-medium">{selectedDriver.full_name?.charAt(0)}</div>
                   <span className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white ${selectedDriver.is_online ? "bg-green-500" : "bg-gray-400"}`} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold">{selectedDriver.user?.full_name}</h2>
-                  <p className="text-xs text-gray-500">{selectedDriver.user?.phone} • {selectedDriver.vehicle?.plate_number}</p>
+                  <h2 className="text-lg font-semibold">{selectedDriver.full_name}</h2>
+                  <p className="text-xs text-gray-500">{selectedDriver.phone} • {selectedDriver.vehicle?.plate_number}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 {selectedDriver.approval_status === "pending" && <><button onClick={() => handleApprove(selectedDriver.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">Approve</button><button onClick={() => setShowReject(true)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium">Reject</button></>}
-                {selectedDriver.approval_status === "approved" && <><button onClick={() => setShowSuspend(true)} className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-medium">Suspend</button><button onClick={() => handleForceOffline(selectedDriver.id)} className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium">Force Offline</button></>}
+                {selectedDriver.approval_status === "approved" && <><button onClick={() => setShowSuspend(true)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">Suspend</button><button onClick={() => handleForceOffline(selectedDriver.id)} className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium">Force Offline</button></>}
                 <button onClick={() => setShowDetail(false)} className="p-1 hover:bg-gray-100 rounded"><X className="h-5 w-5" /></button>
               </div>
             </div>
@@ -626,8 +648,28 @@ function DriversContent() {
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {detailTab === "details" && (
                 <div className="grid grid-cols-3 gap-4">
-                  <DetailSection title="Personal Info" items={[["Phone", selectedDriver.user?.phone || "N/A"],["Email", selectedDriver.user?.email || "N/A"],["ID Number", selectedDriver.id_number || "N/A"],["ID Type", selectedDriver.id_type === "national_id" ? "National ID" : "Passport"],["Date of Birth", selectedDriver.date_of_birth || "N/A"],["Address", selectedDriver.address || "N/A"]]} />
-                  <DetailSection title="License & Vehicle" items={[["License No", selectedDriver.driver_license_number || "N/A"],["License Expiry", selectedDriver.driver_license_expiry || "N/A"],["Plate", selectedDriver.vehicle?.plate_number || "N/A"],["Vehicle", selectedDriver.vehicle ? `${selectedDriver.vehicle.make} ${selectedDriver.vehicle.model}` : "N/A"],["Type", selectedDriver.vehicle?.vehicle_type || "N/A"],["Color", selectedDriver.vehicle?.color || "N/A"]]} />
+                  {!selectedDriver.date_of_birth && (
+                    <div className="col-span-3 flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <span className="text-xs text-amber-800 font-medium flex-1">
+                        Date of birth is missing — approval is blocked until it's set.
+                      </span>
+                      <input
+                        type="date"
+                        value={dobInput}
+                        onChange={(e) => setDobInput(e.target.value)}
+                        className="px-2 py-1 text-xs border rounded-lg"
+                      />
+                      <button
+                        onClick={handleSaveDob}
+                        disabled={!dobInput || savingDob}
+                        className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                      >
+                        {savingDob ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  )}
+                  <DetailSection title="Personal Info" items={[["Phone", selectedDriver.phone || "N/A"],["Email", selectedDriver.email || "N/A"],["ID Number", selectedDriver.id_number || "N/A"],["ID Type", selectedDriver.id_type === "national_id" ? "National ID" : "Passport"],["Date of Birth", selectedDriver.date_of_birth || "N/A"],["Address", selectedDriver.address || "N/A"]]} />
+                  <DetailSection title="License & Vehicle" items={[["License No", (selectedDriver.license_number || selectedDriver.driver_license_number) || "N/A"],["License Expiry", selectedDriver.driver_license_expiry || "N/A"],["Plate", selectedDriver.vehicle?.plate_number || "N/A"],["Vehicle", selectedDriver.vehicle ? `${selectedDriver.vehicle.make} ${selectedDriver.vehicle.model}` : "N/A"],["Type", selectedDriver.vehicle?.vehicle_type || "N/A"],["Color", selectedDriver.vehicle?.color || "N/A"]]} />
                   <DetailSection title="Performance" items={[["Total Rides", String(selectedDriver.total_rides || 0)],["Total Earnings", formatCurrency(selectedDriver.total_earnings || 0)],["Rating", `★ ${selectedDriver.rating?.toFixed(1) || "5.0"}`],["Cash Collected", formatCurrency(selectedDriver.cash_collected || 0)],["Status", selectedDriver.is_online ? "Online" : "Offline"],["Approval", selectedDriver.approval_status || "N/A"]]} />
                 </div>
               )}
@@ -707,10 +749,10 @@ function DriversContent() {
       {showSuspend && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl w-full max-w-md mx-4 p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-orange-600">Suspend Driver</h2>
+            <h2 className="text-lg font-semibold text-green-600">Suspend Driver</h2>
             <p className="text-sm">Suspend <strong>{selectedDriver?.user?.full_name}</strong>?</p>
             <textarea value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} placeholder="Reason..." rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
-            <div className="flex gap-2"><button onClick={() => setShowSuspend(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleSuspend} className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm">Suspend</button></div>
+            <div className="flex gap-2"><button onClick={() => setShowSuspend(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleSuspend} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Suspend</button></div>
           </div>
         </div>
       )}

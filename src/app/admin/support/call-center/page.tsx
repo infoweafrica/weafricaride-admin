@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { RefreshCw, Phone, AlertTriangle, Plus, Search, ExternalLink } from "lucide-react";
 import { formatCurrency, getStatusColor, timeAgo } from "@/lib/utils";
 import Link from "next/link";
@@ -27,6 +27,14 @@ type EscalationRow = {
 };
 
 export default function CallCenterPage() {
+  return (
+    <PermissionGuard permission="manage_support">
+      <CallCenterPageInner />
+    </PermissionGuard>
+  );
+}
+
+function CallCenterPageInner() {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [escalations, setEscalations] = useState<EscalationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,17 +44,13 @@ export default function CallCenterPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch support tickets (call center queue)
-      const { data: ticketData } = await supabase
-        .from("support_tickets")
-        .select(`
-          id, subject, category, status, priority, created_at,
-          ride_id,
-          rider:rider_id(full_name),
-          driver:driver_id(full_name)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(100);
+      // support_tickets has no anon/authenticated RLS policy -- a direct
+      // supabase.from(...) read here silently returned zero rows, no
+      // error. This goes through the same service-role route the plain
+      // tickets page uses, which already includes the rider/driver joins.
+      const res = await fetch("/api/admin/support-tickets?status=all");
+      const body = await res.json();
+      const ticketData = res.ok ? body.data : null;
 
       if (ticketData) {
         const mapped = ticketData.map((t: any) => {
@@ -84,18 +88,14 @@ export default function CallCenterPage() {
           escalated: escalatedCount,
           resolved_today: resolvedToday,
         });
-      }
 
-      // Fetch emergency escalations (safety-related tickets)
-      const { data: escData } = await supabase
-        .from("support_tickets")
-        .select("id, category, description, status, created_at")
-        .in("category", ["safety", "emergency", "harassment", "fraud"])
-        .in("status", ["open", "escalated", "urgent"])
-        .order("created_at", { ascending: false })
-        .limit(20);
+        // Emergency escalations (safety-related tickets) derived from
+        // the same fetch above instead of a second round trip.
+        const escData = ticketData.filter((e: any) =>
+          ["safety", "emergency", "harassment", "fraud"].includes(e.category) &&
+          ["open", "escalated", "urgent"].includes(e.status)
+        ).slice(0, 20);
 
-      if (escData) {
         setEscalations(escData.map((e: any) => ({
           id: e.id,
           type: e.category || "general",

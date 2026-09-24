@@ -10,8 +10,11 @@ import type { CorporateAccount } from "@/lib/types";
 export async function GET(request: NextRequest) {
   const session = requireAdminSession(request);
   if (!session) {
+    console.error("[corporate GET] Unauthorized: no admin session");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  console.log("[corporate GET] Admin session:", session);
   if (!sessionHasPermission(session, "manage_finance")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -32,7 +32,17 @@ const emptyForm = {
   is_active: true,
 };
 
+import PermissionGuard from "@/components/guards/PermissionGuard";
+
 export default function DriverIncentivesPage() {
+  return (
+    <PermissionGuard permission="manage_promotions">
+      <DriverIncentivesPageInner />
+    </PermissionGuard>
+  );
+}
+
+function DriverIncentivesPageInner() {
   const [items, setItems] = useState<Bonus[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -174,7 +184,7 @@ export default function DriverIncentivesPage() {
       <div className="mb-6 rounded-[28px] bg-gradient-to-r from-black via-zinc-900 to-[#c96b1c] p-6 text-white shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-orange-200">WeAfrica Ride</p>
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-green-200">WeAfrica Ride</p>
             <h1 className="mt-2 text-3xl font-black">Driver Bonuses</h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-300">
               Create and manage real bonuses shown in the Driver App Discover page.
@@ -203,7 +213,7 @@ export default function DriverIncentivesPage() {
         <div className="grid gap-3 lg:grid-cols-[1fr_180px_180px]">
           <div className="relative">
             <Search className="absolute left-4 top-3.5 h-4 w-4 text-zinc-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bonus title, type, description..." className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-orange-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bonus title, type, description..." className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-green-400" />
           </div>
 
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none">
@@ -220,7 +230,7 @@ export default function DriverIncentivesPage() {
 
       {filtered.length === 0 ? (
         <div className="rounded-[28px] border border-dashed border-zinc-300 bg-white p-12 text-center shadow-sm">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-orange-50 text-orange-600">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-green-50 text-green-600">
             <Gift className="h-8 w-8" />
           </div>
           <h2 className="mt-4 text-xl font-black text-zinc-900">No bonuses found</h2>
@@ -235,7 +245,7 @@ export default function DriverIncentivesPage() {
             <div key={item.id} className="rounded-[26px] border border-zinc-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-50 text-green-600">
                     <Gift className="h-6 w-6" />
                   </div>
                   <div>
@@ -244,7 +254,7 @@ export default function DriverIncentivesPage() {
                   </div>
                 </div>
 
-                <span className={`rounded-full px-3 py-1 text-xs font-black ${item.is_active ? "bg-orange-100 text-orange-700" : "bg-zinc-100 text-zinc-500"}`}>
+                <span className={`rounded-full px-3 py-1 text-xs font-black ${item.is_active ? "bg-green-100 text-green-700" : "bg-zinc-100 text-zinc-500"}`}>
                   {item.is_active ? "ACTIVE" : "INACTIVE"}
                 </span>
               </div>
@@ -342,7 +352,7 @@ export default function DriverIncentivesPage() {
 
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setModalOpen(false)} className="rounded-2xl border border-zinc-200 px-5 py-3 text-sm font-bold">Cancel</button>
-              <button onClick={saveBonus} disabled={saving} className="inline-flex items-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-black text-black hover:bg-orange-400 disabled:opacity-60">
+              <button onClick={saveBonus} disabled={saving} className="inline-flex items-center gap-2 rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-black hover:bg-green-400 disabled:opacity-60">
                 <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Bonus"}
               </button>
             </div>

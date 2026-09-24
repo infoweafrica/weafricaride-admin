@@ -30,7 +30,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!insertErr) {
-      const resetUrl = `${new URL(request.url).origin}/reset-password?token=${token}`;
+      const siteUrl = process.env.SITE_URL || new URL(request.url).origin;
+      const resetUrl = `${siteUrl}/reset-password?token=${token}`;
       await sendEmail({
         to: email,
         subject: "Reset your WeAfrica Ride staff password",

@@ -9,6 +9,29 @@ interface InviteBody {
   role_id?: string;
 }
 
+export async function GET(request: NextRequest) {
+  const session = requireAdminSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!sessionHasPermission(session, "manage_staff")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const db = getServiceClient();
+  const { data, error } = await db
+    .from("staff_invitations")
+    .select("id, email, full_name, admin_role_id, status, created_at, admin_roles(name)")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ data: data ?? [] });
+}
+
 export async function POST(request: NextRequest) {
   const session = requireAdminSession(request);
   if (!session) {
@@ -50,6 +73,10 @@ export async function POST(request: NextRequest) {
   // Re-inviting the same email refreshes the existing row rather than
   // creating a duplicate (email has no unique constraint at the DB level,
   // so this is a manual check-then-write instead of an upsert).
+  // expires_at is NOT NULL at the DB level with no real business meaning
+  // here — invitations are meant to stay pending indefinitely until
+  // accepted or revoked, so this is pushed far into the future rather
+  // than dropping the column or a real expiry window.
   const inviteToken = crypto.randomUUID();
   const inviteFields = {
     email,
@@ -58,7 +85,7 @@ export async function POST(request: NextRequest) {
     invited_by: session.id,
     status: "pending",
     invite_token: inviteToken,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    expires_at: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString(),
     accepted_by: null,
     accepted_at: null,
   };
@@ -77,7 +104,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: inviteErr.message }, { status: 500 });
   }
 
-  const acceptUrl = `${new URL(request.url).origin}/accept-invitation?token=${inviteToken}`;
+  const siteUrl = process.env.SITE_URL || new URL(request.url).origin;
+  const acceptUrl = `${siteUrl}/accept-invitation?token=${inviteToken}`;
 
   const emailResult = await sendEmail({
     to: email,
@@ -86,7 +114,6 @@ export async function POST(request: NextRequest) {
       <p>Hi ${fullName},</p>
       <p>You've been invited to join the WeAfrica Ride Staff Portal as <strong>${(role as { name: string }).name.replace(/_/g, " ")}</strong>.</p>
       <p><a href="${acceptUrl}">Accept your invitation</a> to set your password and activate your account.</p>
-      <p>This link expires in 7 days.</p>
     `,
   });
 

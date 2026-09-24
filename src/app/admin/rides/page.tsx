@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { ErrorBoundary, ApiErrorDisplay, EmptyState } from "@/components/ErrorBoundary";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { useCityContext } from "@/lib/city-context";
 import Pagination from "@/components/Pagination";
 import { Search, Eye, MapPin, Filter, X } from "lucide-react";
@@ -24,9 +25,11 @@ import type { PaginatedResult } from "@/lib/api/base";
 
 export default function RidesPage() {
   return (
-    <ErrorBoundary>
-      <RidesContent />
-    </ErrorBoundary>
+    <PermissionGuard permission="manage_rides">
+      <ErrorBoundary>
+        <RidesContent />
+      </ErrorBoundary>
+    </PermissionGuard>
   );
 }
 
@@ -472,7 +475,7 @@ function RidesContent() {
                   <button
                     onClick={() => handleRefund(selectedRide.id)}
                     disabled={actionLoading === selectedRide.id}
-                    className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50"
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
                   >
                     {actionLoading === selectedRide.id ? "Working..." : "Process Refund"}
                   </button>

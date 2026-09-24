@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
-const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100";
 
 const REWARD_TYPE_OPTIONS = [
   { value: "voucher", label: "🎟️ Ride Voucher", icon: Ticket },
@@ -105,7 +105,17 @@ const TIER_COLORS: Record<string, string> = {
   standard: "text-zinc-600 bg-zinc-50 border-zinc-200",
 };
 
+import PermissionGuard from "@/components/guards/PermissionGuard";
+
 export default function RewardsPage() {
+  return (
+    <PermissionGuard permission="manage_promotions">
+      <RewardsPageInner />
+    </PermissionGuard>
+  );
+}
+
+function RewardsPageInner() {
   const [activeTab, setActiveTab] = useState<"rewards" | "tiers" | "loyalty">("rewards");
 
   // Rewards state
@@ -363,7 +373,7 @@ export default function RewardsPage() {
             onClick={() => setActiveTab("rewards")}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
               activeTab === "rewards"
-                ? "bg-white shadow text-orange-600"
+                ? "bg-white shadow text-green-600"
                 : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
@@ -373,7 +383,7 @@ export default function RewardsPage() {
             onClick={() => setActiveTab("tiers")}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
               activeTab === "tiers"
-                ? "bg-white shadow text-orange-600"
+                ? "bg-white shadow text-green-600"
                 : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
@@ -383,7 +393,7 @@ export default function RewardsPage() {
             onClick={() => setActiveTab("loyalty")}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
               activeTab === "loyalty"
-                ? "bg-white shadow text-orange-600"
+                ? "bg-white shadow text-green-600"
                 : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
@@ -398,7 +408,7 @@ export default function RewardsPage() {
             <div className="rounded-2xl border bg-white p-5 shadow-sm h-fit">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="flex items-center gap-2 font-black">
-                  <Gift className="h-4 w-4 text-orange-600" />
+                  <Gift className="h-4 w-4 text-green-600" />
                   {editingReward ? "Edit Reward" : "Create Reward"}
                 </h2>
                 {editingReward && (
@@ -490,7 +500,7 @@ export default function RewardsPage() {
                     </select>
                   )}
                 </div>
-                <button onClick={saveReward} className="w-full rounded-xl bg-orange-600 py-3 text-sm font-black text-white hover:bg-orange-700 transition">
+                <button onClick={saveReward} className="w-full rounded-xl bg-green-600 py-3 text-sm font-black text-white hover:bg-green-700 transition">
                   {editingReward ? "Update Reward" : "Create Reward"}
                 </button>
               </div>
@@ -499,7 +509,7 @@ export default function RewardsPage() {
             {/* Rewards List */}
             <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
               <div className="p-4 border-b bg-zinc-50 flex items-center justify-between">
-                <h3 className="font-black flex items-center gap-2"><Store className="h-4 w-4 text-orange-500" /> All Rewards ({rewards.length})</h3>
+                <h3 className="font-black flex items-center gap-2"><Store className="h-4 w-4 text-green-500" /> All Rewards ({rewards.length})</h3>
               </div>
               {rewardsLoading ? (
                 <div className="p-8 text-center text-zinc-400">Loading...</div>
@@ -616,7 +626,7 @@ export default function RewardsPage() {
                     </label>
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => setShowTierModal(false)} className="flex-1 rounded-xl border py-2 text-sm font-bold">Cancel</button>
-                      <button onClick={() => saveTierConfig(editingTier)} className="flex-1 rounded-xl bg-orange-600 py-2 text-sm font-black text-white">Save</button>
+                      <button onClick={() => saveTierConfig(editingTier)} className="flex-1 rounded-xl bg-green-600 py-2 text-sm font-black text-white">Save</button>
                     </div>
                   </div>
                 </div>
@@ -632,7 +642,7 @@ export default function RewardsPage() {
             <div className="order-2 lg:order-2 space-y-6">
               <div className="rounded-2xl border bg-white p-5 shadow-sm">
                 <h2 className="mb-4 flex items-center gap-2 font-black">
-                  <Coins className="h-4 w-4 text-orange-600" /> Manual Credit Adjustment
+                  <Coins className="h-4 w-4 text-green-600" /> Manual Credit Adjustment
                 </h2>
                 <div className="space-y-3">
                   <Field label="User UUID">
@@ -655,7 +665,7 @@ export default function RewardsPage() {
                     <input className={inputClass} value={walletReason} onChange={(e) => setWalletReason(e.target.value)} />
                   </Field>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => adjustWallet(1)} className="rounded-xl bg-orange-600 py-3 text-sm font-black text-white hover:bg-orange-700 transition">Add Credit</button>
+                    <button onClick={() => adjustWallet(1)} className="rounded-xl bg-green-600 py-3 text-sm font-black text-white hover:bg-green-700 transition">Add Credit</button>
                     <button onClick={() => adjustWallet(-1)} className="rounded-xl bg-zinc-900 py-3 text-sm font-black text-white hover:bg-zinc-800 transition">Remove</button>
                   </div>
                 </div>
@@ -663,9 +673,9 @@ export default function RewardsPage() {
 
               {/* Stats Summary */}
               <div className="rounded-2xl border bg-white p-5 shadow-sm">
-                <h3 className="font-black mb-3 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-orange-500" /> Loyalty Stats</h3>
+                <h3 className="font-black mb-3 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-green-500" /> Loyalty Stats</h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="bg-orange-50 rounded-xl p-3"><p className="text-xs text-zinc-500">Total Accounts</p><p className="text-xl font-black text-orange-600">{loyaltyTotal}</p></div>
+                  <div className="bg-green-50 rounded-xl p-3"><p className="text-xs text-zinc-500">Total Accounts</p><p className="text-xl font-black text-green-600">{loyaltyTotal}</p></div>
                   <div className="bg-green-50 rounded-xl p-3"><p className="text-xs text-zinc-500">Platinum</p><p className="text-xl font-black text-green-600">{loyaltyAccounts.filter(a => a.current_tier === "platinum").length}</p></div>
                 </div>
               </div>
@@ -674,7 +684,7 @@ export default function RewardsPage() {
             {/* Loyalty Accounts Table */}
             <div className="order-1 lg:order-1 rounded-2xl border bg-white shadow-sm overflow-hidden">
               <div className="p-4 border-b bg-zinc-50 space-y-3">
-                <h3 className="font-black flex items-center gap-2"><Users className="h-4 w-4 text-orange-500" /> Rider Loyalty Accounts</h3>
+                <h3 className="font-black flex items-center gap-2"><Users className="h-4 w-4 text-green-500" /> Rider Loyalty Accounts</h3>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
@@ -718,7 +728,7 @@ export default function RewardsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <div className="font-bold text-orange-600">{a.points.toLocaleString()}</div>
+                            <div className="font-bold text-green-600">{a.points.toLocaleString()}</div>
                             <div className="text-xs text-zinc-400">{a.lifetime_points.toLocaleString()} lifetime</div>
                           </td>
                           <td className="px-4 py-3 text-right font-bold">{a.total_rides_completed}</td>

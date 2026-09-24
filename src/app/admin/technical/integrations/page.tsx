@@ -35,7 +35,7 @@ function IntegrationsContent() {
       key: "firebase",
       name: "Firebase Cloud Messaging",
       description: "Push notifications and real-time updates",
-      icon: <Webhook className="h-6 w-6 text-orange-600" />,
+      icon: <Webhook className="h-6 w-6 text-green-600" />,
       status: "connected",
       lastSync: "2026-05-27",
     },

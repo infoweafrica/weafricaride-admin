@@ -2,7 +2,17 @@
 import { useState } from "react";
 import { Tag, Plus, Edit, Trash2, Search, Gift, Copy, Percent, Clock } from "lucide-react";
 
+import PermissionGuard from "@/components/guards/PermissionGuard";
+
 export default function PromoCodesPage() {
+  return (
+    <PermissionGuard permission="manage_promotions">
+      <PromoCodesPageInner />
+    </PermissionGuard>
+  );
+}
+
+function PromoCodesPageInner() {
   const [promos] = useState([
     { id: "1", code: "WELCOME50", type: "percentage", value: 50, maxDiscount: 2000, minRide: 500, usageLimit: 100, used: 45, isActive: true, expires: "2026-12-31", isFirstRide: true },
     { id: "2", code: "SAVE2000", type: "fixed", value: 2000, maxDiscount: 2000, minRide: 5000, usageLimit: 200, used: 89, isActive: true, expires: "2026-08-15", isFirstRide: false },

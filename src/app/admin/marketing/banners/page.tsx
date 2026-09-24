@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { Image as ImageIcon, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 type Banner = {
@@ -9,9 +8,19 @@ type Banner = {
   click_action: string | null; placement: string | null; starts_at: string | null; ends_at: string | null; is_active: boolean; created_at: string;
 };
 
-const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-orange-400";
+const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-green-400";
+
+import PermissionGuard from "@/components/guards/PermissionGuard";
 
 export default function MarketingBannersPage() {
+  return (
+    <PermissionGuard permission="manage_promotions">
+      <MarketingBannersPageInner />
+    </PermissionGuard>
+  );
+}
+
+function MarketingBannersPageInner() {
   const [items, setItems] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,8 +35,9 @@ export default function MarketingBannersPage() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from("marketing_banners").select("*").order("created_at", { ascending: false }).limit(100);
-    setItems((data || []) as Banner[]);
+    const res = await fetch("/api/admin/marketing-banners");
+    const body = await res.json();
+    setItems(res.ok ? (body.data || []) as Banner[] : []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -35,26 +45,37 @@ export default function MarketingBannersPage() {
   const save = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    const { error } = await supabase.from("marketing_banners").insert({
-      title: title.trim(), subtitle: subtitle.trim() || null, image_url: imageUrl.trim() || null,
-      target_city: city.trim() || null, click_action: action, placement,
-      starts_at: startsAt ? new Date(startsAt).toISOString() : null,
-      ends_at: endsAt ? new Date(endsAt).toISOString() : null, is_active: true,
+    const res = await fetch("/api/admin/marketing-banners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: title.trim(), subtitle: subtitle.trim() || null, image_url: imageUrl.trim() || null,
+        target_city: city.trim() || null, click_action: action, placement,
+        starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+        ends_at: endsAt ? new Date(endsAt).toISOString() : null, is_active: true,
+      }),
     });
     setSaving(false);
-    if (error) return alert(error.message);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return alert(body.error || "Failed to save banner");
+    }
     setTitle(""); setSubtitle(""); setImageUrl(""); setCity(""); setAction("booking"); setPlacement("home_carousel"); setStartsAt(""); setEndsAt("");
     load();
   };
 
   const toggle = async (banner: Banner) => {
-    await supabase.from("marketing_banners").update({ is_active: !banner.is_active, updated_at: new Date().toISOString() }).eq("id", banner.id);
+    await fetch(`/api/admin/marketing-banners/${banner.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: !banner.is_active, updated_at: new Date().toISOString() }),
+    });
     load();
   };
 
   const remove = async (id: string) => {
     if (!confirm("Delete this banner?")) return;
-    await supabase.from("marketing_banners").delete().eq("id", id);
+    await fetch(`/api/admin/marketing-banners/${id}`, { method: "DELETE" });
     load();
   };
 
@@ -63,7 +84,7 @@ export default function MarketingBannersPage() {
       <div className="flex items-center justify-between"><div><h1 className="text-2xl font-black text-zinc-900">In-App Banners</h1><p className="text-sm text-zinc-500">Publish customer home-screen banners by city and date range.</p></div><button onClick={load} className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-bold"><RefreshCw className="h-4 w-4"/>Refresh</button></div>
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <h2 className="mb-4 flex items-center gap-2 font-black"><Plus className="h-4 w-4 text-orange-600"/>Create Banner</h2>
+          <h2 className="mb-4 flex items-center gap-2 font-black"><Plus className="h-4 w-4 text-green-600"/>Create Banner</h2>
           <div className="space-y-3">
             <Field label="Title"><input className={inputClass} value={title} onChange={(e)=>setTitle(e.target.value)} /></Field>
             <Field label="Subtitle"><textarea className={inputClass} rows={3} value={subtitle} onChange={(e)=>setSubtitle(e.target.value)} /></Field>
@@ -71,7 +92,7 @@ export default function MarketingBannersPage() {
             <div className="grid grid-cols-2 gap-3"><Field label="Target City"><input className={inputClass} value={city} onChange={(e)=>setCity(e.target.value)} placeholder="All cities" /></Field><Field label="Click Action"><select className={inputClass} value={action} onChange={(e)=>setAction(e.target.value)}><option value="booking">Book Ride</option><option value="referral">Referral</option><option value="promos">Promo Codes</option><option value="wallet">Rewards Wallet</option><option value="support">Support</option></select></Field></div>
             <Field label="Home Screen Placement"><select className={inputClass} value={placement} onChange={(e)=>setPlacement(e.target.value)}><option value="home_carousel">More ways to use WeAfrica (carousel)</option><option value="for_you">For you (top row)</option></select></Field>
             <div className="grid grid-cols-2 gap-3"><Field label="Start"><input type="datetime-local" className={inputClass} value={startsAt} onChange={(e)=>setStartsAt(e.target.value)} /></Field><Field label="End"><input type="datetime-local" className={inputClass} value={endsAt} onChange={(e)=>setEndsAt(e.target.value)} /></Field></div>
-            <button onClick={save} disabled={saving || !title.trim()} className="w-full rounded-xl bg-orange-600 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "Saving..." : "Publish Banner"}</button>
+            <button onClick={save} disabled={saving || !title.trim()} className="w-full rounded-xl bg-green-600 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "Saving..." : "Publish Banner"}</button>
           </div>
         </div>
         <div className="grid gap-3">
@@ -79,7 +100,7 @@ export default function MarketingBannersPage() {
             <div key={b.id} className="rounded-2xl border bg-white p-4 shadow-sm">
               <div className="flex items-start gap-4">
                 <div className="flex h-20 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-zinc-100 bg-cover bg-center" style={b.image_url ? { backgroundImage: `url(${b.image_url})` } : undefined}>{!b.image_url && <ImageIcon className="h-6 w-6 text-zinc-400"/>}</div>
-                <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="font-black text-zinc-900">{b.title}</h3><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${b.is_active ? "bg-orange-100 text-orange-700" : "bg-zinc-100 text-zinc-500"}`}>{b.is_active ? "Active" : "Inactive"}</span><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">{b.placement === "for_you" ? "For you" : "Carousel"}</span></div><p className="mt-1 text-sm text-zinc-500">{b.subtitle || "No subtitle"}</p><p className="mt-2 text-xs text-zinc-400">{b.target_city || "All cities"} · {b.click_action || "home"} · {b.ends_at ? `Ends ${new Date(b.ends_at).toLocaleDateString()}` : "No end date"}</p></div>
+                <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="font-black text-zinc-900">{b.title}</h3><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${b.is_active ? "bg-green-100 text-green-700" : "bg-zinc-100 text-zinc-500"}`}>{b.is_active ? "Active" : "Inactive"}</span><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">{b.placement === "for_you" ? "For you" : "Carousel"}</span></div><p className="mt-1 text-sm text-zinc-500">{b.subtitle || "No subtitle"}</p><p className="mt-2 text-xs text-zinc-400">{b.target_city || "All cities"} · {b.click_action || "home"} · {b.ends_at ? `Ends ${new Date(b.ends_at).toLocaleDateString()}` : "No end date"}</p></div>
                 <div className="flex gap-1"><button onClick={()=>toggle(b)} className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-bold">{b.is_active ? "Disable" : "Enable"}</button><button onClick={()=>remove(b.id)} className="rounded-lg bg-zinc-100 p-2 text-zinc-800"><Trash2 className="h-4 w-4"/></button></div>
               </div>
             </div>

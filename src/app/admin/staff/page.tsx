@@ -2,8 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PermissionGuard from "@/components/guards/PermissionGuard";
-import { fetchStaff, fetchRoles, suspendStaff, activateStaff, changeStaffRole, inviteStaffByEmail, roleLabel } from "@/lib/api/admin";
-import { RefreshCw, UserPlus, ShieldOff, ShieldCheck, Mail, X, ChevronDown } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import {
+  fetchStaff, fetchRoles, suspendStaff, activateStaff, changeStaffRole, inviteStaffByEmail, deleteStaff, roleLabel,
+  fetchPendingInvitations, revokeInvitation, resendInvitation, type PendingStaffInvitation,
+} from "@/lib/api/admin";
+import { RefreshCw, UserPlus, ShieldOff, ShieldCheck, Mail, X, ChevronDown, Trash2, Send } from "lucide-react";
 import type { AdminUser, AdminRole } from "@/lib/types";
 
 export default function StaffManagementPage() {
@@ -17,11 +21,13 @@ export default function StaffManagementPage() {
 function StaffContent() {
   const [staff, setStaff] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<PendingStaffInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", full_name: "", role_id: "" });
   const [inviting, setInviting] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -33,6 +39,8 @@ function StaffContent() {
 
       const roles = await fetchRoles();
       setRoles(roles);
+
+      setPendingInvitations(await fetchPendingInvitations());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load staff");
     } finally {
@@ -57,6 +65,16 @@ function StaffContent() {
     loadData();
   };
 
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Permanently remove ${name} from the staff portal? This cannot be undone.`)) return;
+    const result = await deleteStaff(id);
+    if (result.success) {
+      loadData();
+    } else {
+      alert(result.error || "Could not delete this staff member.");
+    }
+  };
+
   const handleInvite = async () => {
     if (!inviteForm.email || !inviteForm.full_name || !inviteForm.role_id) return;
     setInviting(true);
@@ -65,8 +83,26 @@ function StaffContent() {
     if (result.success) {
       setShowInvite(false);
       setInviteForm({ email: "", full_name: "", role_id: "" });
+      loadData();
     }
     setInviting(false);
+  };
+
+  const handleResend = async (inv: PendingStaffInvitation) => {
+    setResendingId(inv.id);
+    const result = await resendInvitation(inv.email, inv.full_name, inv.admin_role_id);
+    alert(result.message);
+    setResendingId(null);
+  };
+
+  const handleDeleteInvitation = async (inv: PendingStaffInvitation) => {
+    if (!confirm(`Delete the pending invitation for ${inv.email}? They won't be able to use that invite link anymore.`)) return;
+    const ok = await revokeInvitation(inv.id);
+    if (ok) {
+      loadData();
+    } else {
+      alert("Could not delete this invitation.");
+    }
   };
 
   return (
@@ -120,6 +156,38 @@ function StaffContent() {
         </div>
       )}
 
+      {/* Pending invitations */}
+      {pendingInvitations.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-medium text-gray-500 uppercase mb-2">Pending Invitations</p>
+          <div className="space-y-1">
+            {pendingInvitations.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between text-sm bg-amber-50 rounded-lg px-3 py-2">
+                <span>
+                  {inv.full_name} &middot; {inv.email} &middot; {roleLabel(inv.admin_roles?.name ?? "")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleResend(inv)}
+                    disabled={resendingId === inv.id}
+                    className="flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 text-gray-600 rounded text-xs hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Send className="h-3 w-3" /> {resendingId === inv.id ? "Sending..." : "Resend"}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteInvitation(inv)}
+                    title="Delete invitation"
+                    className="flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 text-gray-500 rounded text-xs hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Staff table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -149,7 +217,7 @@ function StaffContent() {
                     <td className="px-4 py-3">
                       <div className="relative">
                         <select
-                          value={roles.find((r) => r.name === s.role_name)?.id || ""}
+                          value={s.role_id}
                           onChange={(e) => handleRoleChange(s.id, e.target.value)}
                           className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white appearance-none pr-6"
                         >
@@ -177,6 +245,9 @@ function StaffContent() {
                             <ShieldCheck className="h-3 w-3" /> Activate
                           </button>
                         )}
+                        <button onClick={() => handleDelete(s.id, s.full_name || s.email)} title="Delete staff member" className="flex items-center gap-1 px-2 py-1 bg-gray-50 text-gray-500 rounded text-xs hover:bg-red-50 hover:text-red-600">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </div>
                     </td>
                   </tr>

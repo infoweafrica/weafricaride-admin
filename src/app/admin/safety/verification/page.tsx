@@ -1,19 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Shield, CheckCircle, XCircle, Clock, Search, RefreshCw } from "lucide-react";
 
-export default function VerificationPage() {
+function VerificationPageInner() {
   const [stats, setStats] = useState({ verified: 0, pending: 0, rejected: 0, expired: 0 });
   const [loading, setLoading] = useState(true);
 
+  // drivers has no anon/authenticated RLS policy -- querying it directly
+  // with the browser's anon-key client silently returns zero rows, no
+  // error, which is why every stat here always showed 0. The
+  // service-role-backed /api/drivers/verification-stats route already
+  // existed and computed this correctly; this page just wasn't calling it.
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/drivers/verification-stats");
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Failed to load verification stats");
-      setStats(body.stats || { verified: 0, pending: 0, rejected: 0, expired: 0 });
+      if (res.ok && body.stats) setStats(body.stats);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -51,5 +56,13 @@ export default function VerificationPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function VerificationPage() {
+  return (
+    <PermissionGuard permission="approve_drivers">
+      <VerificationPageInner />
+    </PermissionGuard>
   );
 }

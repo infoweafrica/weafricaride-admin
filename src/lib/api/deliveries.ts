@@ -10,6 +10,8 @@ export interface DeliveryRequest {
   id: string;
   reference: string;
   status: string;
+  delivery_speed: string | null;
+  scheduled_pickup_at: string | null;
   package_type: string;
   package_description: string | null;
   is_fragile: boolean;
@@ -28,6 +30,13 @@ export interface DeliveryRequest {
   payment_status: string | null;
   pickup_pin: string | null;
   dropoff_pin: string | null;
+  package_photo_url: string | null;
+  pickup_photo_url: string | null;
+  pickup_condition: string | null;
+  pickup_condition_note: string | null;
+  pod_photo_url: string | null;
+  pod_signature_url: string | null;
+  pod_recipient_name: string | null;
   city: string | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -81,6 +90,21 @@ export const DELIVERY_ACTIVE_STATUSES = [
 export function deliveryStatusLabel(status?: string | null): string {
   if (!status) return "—";
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function deliverySpeedLabel(speed?: string | null): string {
+  switch (speed) {
+    case "express":
+      return "Express";
+    case "same_day":
+      return "Same Day";
+    case "scheduled":
+      return "Scheduled";
+    case "standard":
+      return "Standard";
+    default:
+      return speed ? deliveryStatusLabel(speed) : "Standard";
+  }
 }
 
 // delivery_requests has exactly one FK to drivers (assigned_driver_id), so

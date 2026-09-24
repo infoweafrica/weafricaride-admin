@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Plus, Pencil, Trash2, X, RefreshCw, Car, ChevronRight } from "lucide-react";
 
-const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100";
 
 interface VehicleMake {
   id: string;
@@ -37,6 +38,14 @@ function slugify(s: string) {
 }
 
 export default function VehicleCatalogPage() {
+  return (
+    <PermissionGuard permission="approve_vehicles">
+      <VehicleCatalogPageInner />
+    </PermissionGuard>
+  );
+}
+
+function VehicleCatalogPageInner() {
   const [makes, setMakes] = useState<VehicleMake[]>([]);
   const [models, setModels] = useState<VehicleModel[]>([]);
   const [classes, setClasses] = useState<VehicleClass[]>([]);
@@ -177,7 +186,7 @@ export default function VehicleCatalogPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-bold text-zinc-900 text-sm">Makes</h2>
-              <button onClick={openCreateMake} className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-2.5 py-1 text-xs font-bold text-white">
+              <button onClick={openCreateMake} className="inline-flex items-center gap-1 rounded-lg bg-green-500 px-2.5 py-1 text-xs font-bold text-white">
                 <Plus className="h-3.5 w-3.5" /> Add
               </button>
             </div>
@@ -191,7 +200,7 @@ export default function VehicleCatalogPage() {
                   <div
                     key={m.id}
                     onClick={() => setSelectedMakeId(m.id)}
-                    className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm cursor-pointer ${selectedMakeId === m.id ? "bg-orange-50 text-orange-700 font-bold" : "hover:bg-zinc-50 text-zinc-700"}`}
+                    className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm cursor-pointer ${selectedMakeId === m.id ? "bg-green-50 text-green-700 font-bold" : "hover:bg-zinc-50 text-zinc-700"}`}
                   >
                     <span className="flex items-center gap-2">
                       <Car className="h-3.5 w-3.5 opacity-60" /> {m.name}
@@ -217,7 +226,7 @@ export default function VehicleCatalogPage() {
               <button
                 onClick={openCreateModel}
                 disabled={!selectedMakeId}
-                className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-2.5 py-1 text-xs font-bold text-white disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg bg-green-500 px-2.5 py-1 text-xs font-bold text-white disabled:opacity-40"
               >
                 <Plus className="h-3.5 w-3.5" /> Add Model
               </button>
@@ -273,7 +282,7 @@ export default function VehicleCatalogPage() {
               </label>
               <div className="flex gap-2">
                 <button onClick={() => setShowMakeModal(false)} className="flex-1 rounded-xl border px-4 py-2 text-sm font-bold text-zinc-700">Cancel</button>
-                <button onClick={saveMake} className="flex-1 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">Save</button>
+                <button onClick={saveMake} className="flex-1 rounded-xl bg-green-500 px-4 py-2 text-sm font-bold text-white">Save</button>
               </div>
             </div>
           </div>
@@ -305,7 +314,7 @@ export default function VehicleCatalogPage() {
               </div>
               <div className="flex gap-2 mt-5">
                 <button onClick={() => setShowModelModal(false)} className="flex-1 rounded-xl border px-4 py-2 text-sm font-bold text-zinc-700">Cancel</button>
-                <button onClick={saveModel} className="flex-1 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">Save</button>
+                <button onClick={saveModel} className="flex-1 rounded-xl bg-green-500 px-4 py-2 text-sm font-bold text-white">Save</button>
               </div>
             </div>
           </div>

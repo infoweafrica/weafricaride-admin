@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Plus, Pencil, Trash2, X, RefreshCw, Car } from "lucide-react";
 
-const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+const inputClass = "w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100";
 
 interface VehicleClass {
   id: string;
@@ -28,6 +29,14 @@ interface EligibilityRow {
 }
 
 export default function VehicleClassesPage() {
+  return (
+    <PermissionGuard permission="approve_vehicles">
+      <VehicleClassesPageInner />
+    </PermissionGuard>
+  );
+}
+
+function VehicleClassesPageInner() {
   const [classes, setClasses] = useState<VehicleClass[]>([]);
   const [rideCategories, setRideCategories] = useState<RideCategory[]>([]);
   const [eligibility, setEligibility] = useState<EligibilityRow[]>([]);
@@ -162,7 +171,7 @@ export default function VehicleClassesPage() {
             <button onClick={loadAll} className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-bold">
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
-            <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">
+            <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-bold text-white">
               <Plus className="h-4 w-4" /> New Class
             </button>
           </div>
@@ -191,7 +200,7 @@ export default function VehicleClassesPage() {
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-orange-50 rounded-lg"><Car className="h-5 w-5 text-orange-600" /></div>
+                      <div className="p-2 bg-green-50 rounded-lg"><Car className="h-5 w-5 text-green-600" /></div>
                       <div>
                         <h3 className="font-semibold text-gray-900">{c.name}</h3>
                         <p className="text-xs text-gray-400">{c.slug}</p>
@@ -283,7 +292,7 @@ export default function VehicleClassesPage() {
               </div>
               <div className="flex gap-2 mt-5">
                 <button onClick={() => { setShowModal(false); resetForm(); }} className="flex-1 rounded-xl border px-4 py-2 text-sm font-bold text-zinc-700">Cancel</button>
-                <button onClick={save} className="flex-1 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">Save</button>
+                <button onClick={save} className="flex-1 rounded-xl bg-green-500 px-4 py-2 text-sm font-bold text-white">Save</button>
               </div>
             </div>
           </div>

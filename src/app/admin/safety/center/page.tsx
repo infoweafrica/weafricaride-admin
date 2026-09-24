@@ -2,10 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Shield, AlertTriangle, PhoneCall, Search, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export default function SafetyCenterPage() {
+  return (
+    <PermissionGuard permission="manage_incidents">
+      <SafetyCenterContent />
+    </PermissionGuard>
+  );
+}
+
+function SafetyCenterContent() {
   const [sosEvents, setSosEvents] = useState(0);
   const [driverComplaints, setDriverComplaints] = useState(0);
   const [riderComplaints, setRiderComplaints] = useState(0);
@@ -26,8 +35,12 @@ export default function SafetyCenterPage() {
       const { count: riderComp } = await supabase.from("support_tickets").select("*", { count: "exact", head: true }).eq("category", "rider_complaint").maybeSingle();
       setRiderComplaints(riderComp || 0);
 
-      const { count: incidentCount } = await supabase.from("incidents").select("*", { count: "exact", head: true }).maybeSingle();
-      setFraudReports(incidentCount || 0);
+      // incidents has no anon/authenticated RLS policy -- a direct
+      // supabase.from("incidents") read here silently returned 0 even
+      // though real rows exist.
+      const incidentsRes = await fetch("/api/admin/incidents?status=all");
+      const incidentsBody = await incidentsRes.json();
+      setFraudReports(incidentsRes.ok ? (incidentsBody.totalCount || 0) : 0);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -36,7 +49,7 @@ export default function SafetyCenterPage() {
 
   const metrics = [
     { label: "SOS Events", value: sosEvents, icon: AlertTriangle, color: "text-red-600 bg-red-50" },
-    { label: "Driver Complaints", value: driverComplaints, icon: PhoneCall, color: "text-orange-600 bg-orange-50" },
+    { label: "Driver Complaints", value: driverComplaints, icon: PhoneCall, color: "text-green-600 bg-green-50" },
     { label: "Rider Complaints", value: riderComplaints, icon: PhoneCall, color: "text-amber-600 bg-amber-50" },
     { label: "Harassment Reports", value: harassmentReports, icon: Shield, color: "text-purple-600 bg-purple-50" },
     { label: "Fraud Reports", value: fraudReports, icon: AlertTriangle, color: "text-red-600 bg-red-50" },

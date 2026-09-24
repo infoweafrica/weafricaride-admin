@@ -41,7 +41,7 @@ export default function AuditLogsPage() {
   const entities = ["all", ...new Set(logs.map(l => l.entity_type))];
 
   const getActionColor = (action: string) => {
-    const colors: Record<string, string> = { approve: "bg-green-100 text-green-800", reject: "bg-red-100 text-red-800", create: "bg-blue-100 text-blue-800", update: "bg-yellow-100 text-yellow-800", delete: "bg-red-100 text-red-800", login: "bg-gray-100 text-gray-800", logout: "bg-gray-100 text-gray-800", refund: "bg-orange-100 text-orange-800", suspend: "bg-red-100 text-red-800", payout: "bg-purple-100 text-purple-800" };
+    const colors: Record<string, string> = { approve: "bg-green-100 text-green-800", reject: "bg-red-100 text-red-800", create: "bg-blue-100 text-blue-800", update: "bg-yellow-100 text-yellow-800", delete: "bg-red-100 text-red-800", login: "bg-gray-100 text-gray-800", logout: "bg-gray-100 text-gray-800", refund: "bg-green-100 text-green-800", suspend: "bg-red-100 text-red-800", payout: "bg-purple-100 text-purple-800" };
     return colors[action] || "bg-gray-100 text-gray-800";
   };
 

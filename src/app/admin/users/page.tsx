@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { ErrorBoundary, ApiErrorDisplay, EmptyState } from "@/components/ErrorBoundary";
 import Pagination from "@/components/Pagination";
 import {
@@ -20,7 +20,11 @@ import type { Rider } from "@/lib/types";
 type RiderTab = "overview" | "all" | "active" | "suspended" | "wallets" | "verification" | "support" | "analytics";
 
 export default function RidersPage() {
-  return <ErrorBoundary><RidersContent /></ErrorBoundary>;
+  return (
+    <PermissionGuard permission="manage_users">
+      <ErrorBoundary><RidersContent /></ErrorBoundary>
+    </PermissionGuard>
+  );
 }
 
 function RidersContent() {
@@ -442,8 +446,9 @@ function RiderWalletsTab() {
     async function load() {
       setLoading(true);
       try {
-        const { data } = await supabase.from("wallets").select("*, user:users(full_name, phone, email)").order("created_at", { ascending: false });
-        setWallets((data as Record<string, unknown>[]) || []);
+        const res = await fetch("/api/admin/wallets");
+        const body = await res.json();
+        setWallets(res.ok ? (body.data as Record<string, unknown>[]) || [] : []);
       } catch { setWallets([]); }
       finally { setLoading(false); }
     }
@@ -454,8 +459,9 @@ function RiderWalletsTab() {
     setSelectedWallet(w);
     setShowDetail(true);
     try {
-      const { data } = await supabase.from("wallet_transactions").select("*").eq("wallet_id", w.id as string).order("created_at", { ascending: false }).limit(20);
-      setTransactions((data as Record<string, unknown>[]) || []);
+      const res = await fetch(`/api/admin/wallets/${w.id}/transactions`);
+      const body = await res.json();
+      setTransactions(res.ok ? (body.data as Record<string, unknown>[]) || [] : []);
     } catch { setTransactions([]); }
   };
 

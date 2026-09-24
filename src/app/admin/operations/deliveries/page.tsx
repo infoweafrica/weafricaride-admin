@@ -11,6 +11,7 @@ import {
   cancelDelivery,
   retryDeliveryDispatch,
   deliveryStatusLabel,
+  deliverySpeedLabel,
   DELIVERY_ACTIVE_STATUSES,
   DELIVERY_STATUSES,
   type DeliveryRequest,
@@ -248,6 +249,16 @@ function DeliveriesContent() {
                             FRAGILE
                           </span>
                         )}
+                        {d.delivery_speed && d.delivery_speed !== "standard" && (
+                          <span className="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                            {deliverySpeedLabel(d.delivery_speed).toUpperCase()}
+                          </span>
+                        )}
+                        {d.scheduled_pickup_at && (
+                          <div className="mt-0.5 text-[11px] text-gray-400">
+                            ⏱ {formatDate(d.scheduled_pickup_at)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 max-w-[260px]">
                         <div className="truncate text-gray-900">{d.pickup_address || "—"}</div>
@@ -342,6 +353,12 @@ function DeliveriesContent() {
                 {selected.is_fragile ? " · fragile" : ""}
                 {selected.package_description ? ` · ${selected.package_description}` : ""}
               </Row>
+              <Row label="Speed">
+                {deliverySpeedLabel(selected.delivery_speed)}
+                {selected.scheduled_pickup_at
+                  ? ` · pickup ${formatDate(selected.scheduled_pickup_at)}`
+                  : ""}
+              </Row>
               <Row label="Pickup">{selected.pickup_address || "—"}</Row>
               <Row label="Pickup contact">
                 {(selected.pickup_contact_name || "—") + (selected.pickup_contact_phone ? ` · ${selected.pickup_contact_phone}` : "")}
@@ -359,6 +376,31 @@ function DeliveriesContent() {
               </Row>
               <Row label="Distance">{selected.distance_km != null ? `${selected.distance_km} km` : "—"}</Row>
               <Row label="Requested">{formatDate(selected.requested_at || selected.created_at)}</Row>
+              {selected.pickup_condition && (
+                <Row label="Pickup condition">
+                  {selected.pickup_condition}
+                  {selected.pickup_condition_note ? ` — ${selected.pickup_condition_note}` : ""}
+                </Row>
+              )}
+              {(selected.package_photo_url || selected.pickup_photo_url || selected.pod_photo_url || selected.pod_signature_url) && (
+                <Row label="Proof">
+                  <span className="flex flex-wrap gap-3">
+                    {selected.package_photo_url && (
+                      <a href={selected.package_photo_url} target="_blank" rel="noopener noreferrer" className="text-green-700 underline">package</a>
+                    )}
+                    {selected.pickup_photo_url && (
+                      <a href={selected.pickup_photo_url} target="_blank" rel="noopener noreferrer" className="text-green-700 underline">pickup photo</a>
+                    )}
+                    {selected.pod_photo_url && (
+                      <a href={selected.pod_photo_url} target="_blank" rel="noopener noreferrer" className="text-green-700 underline">delivery photo</a>
+                    )}
+                    {selected.pod_signature_url && (
+                      <a href={selected.pod_signature_url} target="_blank" rel="noopener noreferrer" className="text-green-700 underline">signature</a>
+                    )}
+                  </span>
+                </Row>
+              )}
+              {selected.pod_recipient_name && <Row label="Received by">{selected.pod_recipient_name}</Row>}
               {selected.cancellation_reason && <Row label="Cancel reason">{selected.cancellation_reason}</Row>}
               {selected.failure_reason && <Row label="Failure">{selected.failure_reason}</Row>}
             </dl>

@@ -9,7 +9,7 @@ export default function AppButton({ variant = "primary", className = "", childre
     primary: "bg-green-600 text-white hover:bg-green-700 shadow-sm shadow-green-200",
     secondary: "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50",
     danger: "bg-red-600 text-white hover:bg-red-700",
-    warning: "bg-orange-600 text-white hover:bg-orange-700",
+    warning: "bg-green-600 text-white hover:bg-green-700",
   };
 
   return (

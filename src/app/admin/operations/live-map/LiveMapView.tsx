@@ -202,13 +202,19 @@ export default function LiveMapView({
   const animFramesRef = useRef<Map<string, number>>(new Map());
   const hasAutoFitRef = useRef(false);
   const pendingRidesRef = useRef<RideOnMap[]>(rides);
-  const [webglUnsupported, setWebglUnsupported] = useState(false);
+  // "webgl" (genuinely unsupported browser/context) and "init" (Mapbox threw
+  // for some other reason -- bad/missing access token, network failure
+  // fetching the style, etc.) used to both collapse into the same
+  // "requires WebGL" message via one shared boolean, so a real error (e.g.
+  // an invalid token) was indistinguishable from an actual WebGL-less
+  // browser and impossible to diagnose from the UI alone.
+  const [mapError, setMapError] = useState<{ kind: "webgl" | "init"; message?: string } | null>(null);
 
   // Initialize map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     if (!mapboxgl.supported()) {
-      setWebglUnsupported(true);
+      setMapError({ kind: "webgl" });
       return;
     }
 
@@ -222,10 +228,18 @@ export default function LiveMapView({
       });
     } catch (err) {
       console.error("Mapbox failed to initialize:", err);
-      setWebglUnsupported(true);
+      setMapError({ kind: "init", message: err instanceof Error ? err.message : String(err) });
       return;
     }
-    map.on("error", (e) => console.error("Mapbox error:", e.error));
+    map.on("error", (e) => {
+      console.error("Mapbox error:", e.error);
+      // A style/tile load failure (commonly an invalid or missing access
+      // token) fires here rather than throwing synchronously above -- catch
+      // it too so it doesn't just silently leave a blank grey box.
+      if (!mapLoadedRef.current) {
+        setMapError({ kind: "init", message: e.error?.message || "Failed to load map style" });
+      }
+    });
     map.addControl(new mapboxgl.NavigationControl(), "top-left");
 
     map.on("load", () => {
@@ -476,13 +490,26 @@ export default function LiveMapView({
     }
   }, [drivers, vehicleFilter, selectedDriverId, animateMarker, buildPopup]);
 
-  if (webglUnsupported) {
+  if (mapError?.kind === "webgl") {
     return (
       <div className="bg-white rounded-xl border border-gray-200 flex flex-col items-center justify-center gap-2 text-center p-6" style={{ minHeight: "680px" }}>
         <p className="font-semibold text-gray-700">Map unavailable in this browser</p>
         <p className="text-sm text-gray-500 max-w-sm">
           This view requires WebGL, which isn&apos;t available here (common in embedded webviews like VS Code&apos;s Simple Browser,
           or with hardware acceleration disabled). Open this page in a regular Chrome, Firefox, or Safari window.
+        </p>
+      </div>
+    );
+  }
+
+  if (mapError?.kind === "init") {
+    return (
+      <div className="bg-white rounded-xl border border-red-200 flex flex-col items-center justify-center gap-2 text-center p-6" style={{ minHeight: "680px" }}>
+        <p className="font-semibold text-red-700">Map failed to load</p>
+        <p className="text-sm text-gray-500 max-w-md">{mapError.message || "Unknown error initializing Mapbox."}</p>
+        <p className="text-xs text-gray-400 max-w-md">
+          This is a real error, not a WebGL/browser limitation — check the Mapbox access token
+          (NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN) and browser console for details.
         </p>
       </div>
     );

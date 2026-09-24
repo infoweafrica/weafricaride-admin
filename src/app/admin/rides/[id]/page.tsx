@@ -20,6 +20,8 @@ import {
   Navigation2,
   Play,
   Pause,
+  MessageSquare,
+  Flag,
 } from "lucide-react";
 import {
   formatCurrency,
@@ -52,6 +54,14 @@ type ComplaintEntry = {
   created_at: string;
 };
 
+type ChatMessageEntry = {
+  id: string;
+  sender_type: "rider" | "driver";
+  message: string;
+  created_at: string;
+  flagged: boolean;
+};
+
 export default function RideDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -60,9 +70,10 @@ export default function RideDetailPage() {
   const [ride, setRide] = useState<RideWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"details" | "timeline" | "payment" | "playback" | "support" | "audit">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "timeline" | "payment" | "playback" | "chat" | "support" | "audit">("details");
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [complaints, setComplaints] = useState<ComplaintEntry[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessageEntry[]>([]);
   const [adminNote, setAdminNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
@@ -101,6 +112,19 @@ export default function RideDetailPage() {
       if (auditData) {
         setAuditLogs((auditData as unknown) as AuditEntry[]);
       }
+
+      // Fetch rider<->driver chat -- ride_messages has permissive RLS
+      // (unlike most tables in this schema, no auth.uid() involved), so
+      // a direct read works fine here for admin visibility/moderation.
+      const { data: chatData } = await supabase
+        .from("ride_messages")
+        .select("id, sender_type, message, created_at, flagged")
+        .eq("ride_id", rideId)
+        .order("created_at", { ascending: true });
+
+      if (chatData) {
+        setChatMessages((chatData as unknown) as ChatMessageEntry[]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load ride");
     } finally {
@@ -119,6 +143,24 @@ export default function RideDetailPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "rides", filter: `id=eq.${rideId}` }, (payload) => {
         if (payload.new) setRide(payload.new as RideWithRelations);
       })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [rideId]);
+
+  // Realtime subscription for new chat messages, so a support agent
+  // watching this tab sees new rider/driver messages without refreshing.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`ride_messages_${rideId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "ride_messages", filter: `ride_id=eq.${rideId}` },
+        (payload) => {
+          const msg = payload.new as ChatMessageEntry;
+          setChatMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -287,6 +329,7 @@ export default function RideDetailPage() {
           { id: "timeline" as const, label: "Timeline", icon: Clock },
           { id: "payment" as const, label: "Payment", icon: DollarSign },
           { id: "playback" as const, label: "Playback", icon: Play },
+          { id: "chat" as const, label: "Chat", icon: MessageSquare },
           { id: "support" as const, label: "Support", icon: HeadphonesIcon },
           { id: "audit" as const, label: "Audit", icon: Shield },
         ].map((tab) => (
@@ -545,44 +588,6 @@ export default function RideDetailPage() {
                     );
                   })()}
                 </div>
-
-                {ride.payment_method === "cash" && (ride.cash_received != null) && (
-                  <div className="border rounded-lg divide-y mt-4">
-                    <div className="p-3 text-xs font-medium text-gray-400 uppercase bg-gray-50">Cash Collection</div>
-                    <div className="flex justify-between p-3 text-sm">
-                      <span className="text-gray-500">Cash Received</span>
-                      <span className="font-medium">{formatCurrency(ride.cash_received || 0)}</span>
-                    </div>
-                    {(ride.change_amount ?? 0) > 0 && (
-                      <div className="flex justify-between p-3 text-sm">
-                        <span className="text-gray-500">Change Given</span>
-                        <span>{formatCurrency(ride.change_amount || 0)}</span>
-                      </div>
-                    )}
-                    {(ride.rider_credit_amount ?? 0) > 0 && (
-                      <div className="flex justify-between p-3 text-sm text-blue-700 bg-blue-50">
-                        <span>Added to Rider Credit</span>
-                        <span>{formatCurrency(ride.rider_credit_amount || 0)}</span>
-                      </div>
-                    )}
-                    {(ride.cash_outstanding_amount ?? 0) > 0 && (
-                      <div className="flex justify-between p-3 text-sm text-amber-700 bg-amber-50">
-                        <span>Still Owed by Rider</span>
-                        <span>{formatCurrency(ride.cash_outstanding_amount || 0)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between p-3 text-sm">
-                      <span className="text-gray-500">Driver Settlement</span>
-                      <span className="capitalize">{ride.settlement_status?.replace(/_/g, " ") || "not required"}</span>
-                    </div>
-                    {ride.cash_confirmed_at && (
-                      <div className="flex justify-between p-3 text-sm">
-                        <span className="text-gray-500">Confirmed At</span>
-                        <span>{new Date(ride.cash_confirmed_at).toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -616,6 +621,47 @@ export default function RideDetailPage() {
                 </button>
                 <span className="text-xs text-gray-400">Full route replay (requires location tracking data)</span>
               </div>
+            </div>
+          )}
+
+          {/* ─── CHAT TAB ─── */}
+          {activeTab === "chat" && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-green-50 rounded-lg">
+                  <MessageSquare className="h-5 w-5 text-green-600" />
+                </div>
+                <h3 className="font-semibold text-gray-900">Rider ↔ Driver Chat</h3>
+                <span className="text-xs text-gray-400 ml-auto">Read-only — for support &amp; moderation</span>
+              </div>
+              {chatMessages.length > 0 ? (
+                <div className="space-y-3 max-h-[32rem] overflow-y-auto">
+                  {chatMessages.map((m) => {
+                    const isRider = m.sender_type === "rider";
+                    const senderName = isRider
+                      ? riderUser?.full_name || riderObj?.full_name || "Rider"
+                      : driverUser?.full_name || driverObj?.full_name || "Driver";
+                    return (
+                      <div key={m.id} className={`flex ${isRider ? "justify-start" : "justify-end"}`}>
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
+                            isRider ? "bg-gray-100 text-gray-900" : "bg-green-100 text-green-900"
+                          } ${m.flagged ? "ring-2 ring-red-400" : ""}`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-xs font-semibold opacity-70">{senderName}</span>
+                            {m.flagged && <Flag className="h-3 w-3 text-red-500" />}
+                          </div>
+                          <p>{m.message}</p>
+                          <p className="text-[10px] opacity-50 mt-1">{formatDate(m.created_at)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No messages exchanged for this ride yet.</p>
+              )}
             </div>
           )}
 
@@ -759,7 +805,7 @@ export default function RideDetailPage() {
               {ride.payment_status === "paid" && ride.status === "completed" && (
                 <button
                   onClick={handleRefundRide}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
                 >
                   <DollarSign className="h-4 w-4" /> Process Refund
                 </button>

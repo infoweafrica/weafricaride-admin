@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PermissionGuard from "@/components/guards/PermissionGuard";
-import { supabase } from "@/lib/supabase";
 import { RefreshCw, AlertTriangle, Shield, Search } from "lucide-react";
 import type { Incident, IncidentSeverity, IncidentStatus } from "@/lib/types";
 
 const SEVERITY_COLORS: Record<IncidentSeverity, string> = {
   low: "bg-blue-100 text-blue-700",
   medium: "bg-amber-100 text-amber-700",
-  high: "bg-orange-100 text-orange-700",
+  high: "bg-green-100 text-green-700",
   critical: "bg-red-100 text-red-700",
 };
 
@@ -29,41 +28,37 @@ export default function IncidentsPage() {
 }
 
 function IncidentsContent() {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [allIncidents, setAllIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<IncidentStatus | "all">("all");
 
+  // Always fetched unfiltered -- filter only narrows the displayed list
+  // client-side, so the stat tiles above always reflect true totals
+  // instead of whatever subset the currently-selected tab narrowed the
+  // fetch down to.
   const fetchIncidents = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase
-        .from("incidents")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (filter !== "all") {
-        query = query.eq("status", filter);
-      }
-
-      const { data, error: err } = await query;
-      if (err) throw new Error(err.message);
-      setIncidents((data as Incident[]) || []);
+      const res = await fetch("/api/admin/incidents?status=all");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load incidents");
+      setAllIncidents((body.data as Incident[]) || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load incidents");
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     fetchIncidents();
   }, [fetchIncidents]);
 
-  const open = incidents.filter((i) => i.status === "open" || i.status === "investigating");
-  const critical = incidents.filter((i) => i.severity === "critical" || i.severity === "high");
+  const incidents = filter === "all" ? allIncidents : allIncidents.filter((i) => i.status === filter);
+  const open = allIncidents.filter((i) => i.status === "open" || i.status === "investigating");
+  const critical = allIncidents.filter((i) => i.severity === "critical" || i.severity === "high");
 
   return (
     <div className="space-y-6">
@@ -85,7 +80,7 @@ function IncidentsContent() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-500">Total</p>
-          <p className="text-2xl font-bold">{incidents.length}</p>
+          <p className="text-2xl font-bold">{allIncidents.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-red-200 p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -94,12 +89,12 @@ function IncidentsContent() {
           </div>
           <p className="text-2xl font-bold text-red-600">{open.length}</p>
         </div>
-        <div className="bg-white rounded-xl border border-orange-200 p-4">
+        <div className="bg-white rounded-xl border border-green-200 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Shield className="h-4 w-4 text-orange-500" />
-            <span className="text-xs font-medium text-orange-600">High Severity</span>
+            <Shield className="h-4 w-4 text-green-500" />
+            <span className="text-xs font-medium text-green-600">High Severity</span>
           </div>
-          <p className="text-2xl font-bold text-orange-600">{critical.length}</p>
+          <p className="text-2xl font-bold text-green-600">{critical.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-green-200 p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -107,7 +102,7 @@ function IncidentsContent() {
             <span className="text-xs font-medium text-green-600">Resolved</span>
           </div>
           <p className="text-2xl font-bold text-green-600">
-            {incidents.filter((i) => i.status === "resolved").length}
+            {allIncidents.filter((i) => i.status === "resolved").length}
           </p>
         </div>
       </div>

@@ -74,6 +74,17 @@ export function verifyAdminSessionToken(
   }
 }
 
+/** Superadmin's `all_access` permission implicitly grants everything else —
+ * mirrors the client-side PermissionGuard check so server routes agree
+ * with what the UI already lets a superadmin do. */
+export function sessionHasPermission(
+  session: AdminSessionTokenPayload | null,
+  permission: Permission
+): boolean {
+  if (!session) return false;
+  return session.permissions.includes("all_access") || session.permissions.includes(permission);
+}
+
 /** For use inside App Router API route handlers (Node runtime). */
 export function requireAdminSession(
   request: NextRequest
@@ -87,21 +98,4 @@ export async function getAdminSessionFromCookies(): Promise<AdminSessionTokenPay
   const store = await cookies();
   const token = store.get(ADMIN_SESSION_COOKIE)?.value;
   return verifyAdminSessionToken(token);
-}
-
-/**
- * Server-side mirror of the hasPermission() logic in auth-context.tsx.
- * Sessions with no permissions array (pre-permission-system) fall back to
- * treating the superadmin role as all_access, everyone else as denied.
- */
-export function sessionHasPermission(
-  session: AdminSessionTokenPayload | null,
-  permission: Permission
-): boolean {
-  if (!session) return false;
-  if (!session.permissions || session.permissions.length === 0) {
-    return session.role === "superadmin";
-  }
-  if (session.permissions.includes("all_access")) return true;
-  return session.permissions.includes(permission);
 }

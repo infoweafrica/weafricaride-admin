@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { Wallet, WalletTransaction } from "@/lib/types";
 import { Search } from "lucide-react";
 import { formatCurrency, formatDate, timeAgo } from "@/lib/utils";
 
 export default function WalletsPage() {
+  return (
+    <PermissionGuard permission="manage_finance">
+      <WalletsPageInner />
+    </PermissionGuard>
+  );
+}
+
+function WalletsPageInner() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -17,8 +25,9 @@ export default function WalletsPage() {
   const fetchWallets = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from("wallets").select("*, user:users(full_name, phone, email)").order("created_at", { ascending: false });
-      setWallets((data as Wallet[]) || []);
+      const res = await fetch("/api/admin/wallets");
+      const body = await res.json();
+      setWallets(res.ok ? (body.data as Wallet[]) || [] : []);
     } catch {
       setWallets([]);
     } finally { setLoading(false); }
@@ -30,8 +39,9 @@ export default function WalletsPage() {
     setSelectedWallet(wallet);
     setShowDetail(true);
     try {
-      const { data } = await supabase.from("wallet_transactions").select("*").eq("wallet_id", wallet.id).order("created_at", { ascending: false }).limit(20);
-      setTransactions((data as WalletTransaction[]) || []);
+      const res = await fetch(`/api/admin/wallets/${wallet.id}/transactions`);
+      const body = await res.json();
+      setTransactions(res.ok ? (body.data as WalletTransaction[]) || [] : []);
     } catch {
       setTransactions([]);
     }

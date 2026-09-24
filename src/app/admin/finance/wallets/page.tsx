@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import PermissionGuard from "@/components/guards/PermissionGuard";
 import { RefreshCw, Wallet, Search, Eye } from "lucide-react";
 import { formatCurrency, getStatusColor } from "@/lib/utils";
 import Link from "next/link";
@@ -19,6 +19,14 @@ type WalletRecord = {
 };
 
 export default function WalletManagementPage() {
+  return (
+    <PermissionGuard permission="manage_finance">
+      <WalletManagementPageInner />
+    </PermissionGuard>
+  );
+}
+
+function WalletManagementPageInner() {
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -29,12 +37,11 @@ export default function WalletManagementPage() {
     try {
       const allWallets: WalletRecord[] = [];
 
-      // 1. Fetch rider wallets
-      const { data: riderWallets } = await supabase
-        .from("wallets")
-        .select("*, rider:riders(id, user:users(full_name))")
-        .order("created_at", { ascending: false })
-        .limit(100);
+      const overviewRes = await fetch("/api/admin/wallets-overview");
+      const overview = overviewRes.ok ? await overviewRes.json() : { riderWallets: [], driverWallets: [], platformTransactions: [] };
+      const riderWallets = overview.riderWallets;
+      const driverWallets = overview.driverWallets;
+      const platformData = overview.platformTransactions;
 
       if (riderWallets) {
         riderWallets.forEach((w: any) => {
@@ -54,13 +61,6 @@ export default function WalletManagementPage() {
         });
       }
 
-      // 2. Fetch driver wallets
-      const { data: driverWallets } = await supabase
-        .from("driver_wallets")
-        .select("*, driver:drivers(id, user:users(full_name))")
-        .order("available_balance", { ascending: false })
-        .limit(100);
-
       if (driverWallets) {
         driverWallets.forEach((w: any) => {
           const driverObj = w.driver as Record<string, any> | undefined;
@@ -79,13 +79,7 @@ export default function WalletManagementPage() {
         });
       }
 
-      // 3. Platform wallet — sum of company_transactions if any
-      const { data: platformData } = await supabase
-        .from("company_transactions")
-        .select("amount, type")
-        .order("created_at", { ascending: false })
-        .limit(1000);
-
+      // Platform wallet — sum of company_transactions if any
       let platformBalance = 0;
       if (platformData) {
         platformData.forEach((t: any) => {

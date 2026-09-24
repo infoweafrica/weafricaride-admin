@@ -21,7 +21,7 @@ export async function fetchDriverReferrals(
 ) {
   let query = supabase
     .from("driver_referrals")
-    .select("*, referrer:drivers!driver_referrals_referrer_id_fkey(id, full_name, phone, user:users(full_name, phone)), referred_driver:drivers!driver_referrals_referred_driver_id_fkey(id, full_name, approval_status, user:users(full_name, phone)), campaign:referral_campaigns(id, name)", { count: "exact" });
+    .select("*, referrer:drivers!driver_referrals_referrer_id_fkey(id, user:users(full_name, phone)), referred_driver:drivers!driver_referrals_referred_driver_id_fkey(id, approval_status, user:users(full_name, phone))", { count: "exact" });
 
   if (filters?.status) {
     query = query.eq("status", filters.status);
@@ -124,6 +124,36 @@ export async function approveRiderReferralCredit(
   if (error) throw error;
 }
 
+export async function issueRiderReferralCredit(
+  referralId: string,
+  transactionRef?: string
+) {
+  const { error } = await supabase
+    .from("rider_referrals")
+    .update({
+      status: "credit_issued",
+      credit_issued_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", referralId)
+    .eq("status", "credit_approved");
+
+  if (error) throw error;
+
+  const { error: rewardError } = await supabase
+    .from("referral_rewards")
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      transaction_reference: transactionRef,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("referral_id", referralId)
+    .eq("referral_type", "rider");
+
+  if (rewardError) throw rewardError;
+}
+
 export async function rejectReferral(referralId: string, referralType: "driver" | "rider", reason?: string) {
   const table = referralType === "driver" ? "driver_referrals" : "rider_referrals";
   const { error } = await supabase
@@ -198,7 +228,7 @@ export async function fetchRiderReferrals(
 ) {
   let query = supabase
     .from("rider_referrals")
-    .select("*, referrer:riders!rider_referrals_referrer_id_fkey(id, full_name, user:users(full_name, phone)), referred_rider:riders!rider_referrals_referred_rider_id_fkey(id, full_name, user:users(full_name, phone))", { count: "exact" });
+    .select("*, referrer:riders!rider_referrals_referrer_id_fkey(id, user:users(full_name, phone)), referred_rider:riders!rider_referrals_referred_rider_id_fkey(id, user:users(full_name, phone))", { count: "exact" });
 
   if (filters?.status) {
     query = query.eq("status", filters.status);
@@ -246,27 +276,21 @@ export async function fetchCampaigns(page = 1, pageSize = 20) {
 }
 
 export async function createCampaign(campaign: Partial<ReferralCampaign>) {
-  const { data, error } = await supabase
-    .from("referral_campaigns")
-    .insert({
-      name: campaign.name,
-      description: campaign.description,
-      campaign_type: campaign.campaign_type || "both",
-      starts_at: campaign.starts_at,
-      ends_at: campaign.ends_at,
-      driver_bonus_amount: campaign.driver_bonus_amount || 0,
-      rider_credit_amount: campaign.rider_credit_amount || 0,
-      conditions: campaign.conditions || {},
-      target_city: campaign.target_city,
-      target_vehicle_type: campaign.target_vehicle_type,
-      is_active: true,
-      max_referrals_per_user: campaign.max_referrals_per_user,
-    })
-    .select()
-    .single();
+  const response = await fetch("/api/admin/referrals/campaigns", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(campaign),
+  });
 
-  if (error) throw error;
-  return data as ReferralCampaign;
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to create campaign");
+  }
+
+  return result.data as ReferralCampaign;
 }
 
 export async function updateCampaign(id: string, updates: Partial<ReferralCampaign>) {

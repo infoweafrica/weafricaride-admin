@@ -43,7 +43,7 @@ export default function FraudDetectionPage() {
 
   const fraudTypes = [
     { type: "fake_accounts", label: "Fake Accounts", icon: UserX, color: "text-red-600 bg-red-50" },
-    { type: "fake_trips", label: "Fake Trips", icon: MapPin, color: "text-orange-600 bg-orange-50" },
+    { type: "fake_trips", label: "Fake Trips", icon: MapPin, color: "text-green-600 bg-green-50" },
     { type: "gps_spoofing", label: "GPS Spoofing", icon: MapPin, color: "text-yellow-600 bg-yellow-50" },
     { type: "payment_fraud", label: "Payment Fraud", icon: AlertTriangle, color: "text-purple-600 bg-purple-50" },
     { type: "promo_abuse", label: "Promo Abuse", icon: Gift, color: "text-pink-600 bg-pink-50" },

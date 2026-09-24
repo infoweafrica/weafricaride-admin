@@ -140,7 +140,7 @@ export default function ComplaintsPage() {
                     <td className="px-4 py-3">
                       <span className={`text-xs font-medium ${
                         c.priority === "urgent" ? "text-red-600" :
-                        c.priority === "high" ? "text-orange-600" :
+                        c.priority === "high" ? "text-green-600" :
                         "text-gray-500"
                       }`}>{c.priority}</span>
                     </td>

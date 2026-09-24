@@ -138,7 +138,7 @@ function DashboardContent() {
         <StatCard title="Total Drivers" value={formatNumber(totalDrivers)} subtitle={`${activeDrivers} active now`} icon={Car} iconClassName="bg-purple-50" />
         <StatCard title="Active Rides" value={activeRides} subtitle="Currently in progress" icon={Clock} iconClassName="bg-cyan-50" />
         <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} subtitle={`${formatNumber(completedRides)} completed rides`} icon={DollarSign} iconClassName="bg-yellow-50" />
-        <StatCard title="Pending Approvals" value={pendingApprovals} subtitle="New driver applications" icon={ClipboardList} iconClassName="bg-orange-50" />
+        <StatCard title="Pending Approvals" value={pendingApprovals} subtitle="New driver applications" icon={ClipboardList} iconClassName="bg-green-50" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

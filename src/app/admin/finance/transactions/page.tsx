@@ -85,7 +85,7 @@ export default function PaymentsPage() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-400">Total Refunded</p>
-          <p className="text-xl font-bold text-orange-600">{formatCurrency(totalRefunded)}</p>
+          <p className="text-xl font-bold text-green-600">{formatCurrency(totalRefunded)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-400">Failed Payments</p>
@@ -154,7 +154,7 @@ export default function PaymentsPage() {
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {pay.payment_status === "completed" && (
-                              <button onClick={() => { setSelectedPayment(pay); setShowRefund(true); }} className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200">Refund</button>
+                              <button onClick={() => { setSelectedPayment(pay); setShowRefund(true); }} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">Refund</button>
                             )}
                             <Download className="h-4 w-4 text-gray-400" />
                           </div>
@@ -213,7 +213,7 @@ export default function PaymentsPage() {
             <textarea value={refundReason} onChange={(e) => setRefundReason(e.target.value)} placeholder="Reason for refund..." rows={3} className="w-full px-3 py-2 border rounded-lg text-sm" />
             <div className="flex gap-2">
               <button onClick={() => setShowRefund(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Cancel</button>
-              <button onClick={handleRefund} className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm">Confirm Refund</button>
+              <button onClick={handleRefund} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Confirm Refund</button>
             </div>
           </div>
         </div>
