@@ -168,6 +168,17 @@ export default function SocialAccountsPage() {
                     >
                       {account ? "Manage connection" : "Connect YouTube"}
                     </button>
+                  ) : platform === "tiktok" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href =
+                          "/api/admin/marketing/oauth/tiktok";
+                      }}
+                      className="w-full rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted"
+                    >
+                      {account ? "Manage connection" : "Connect account"}
+                    </button>
                   ) : (
                     <button
                       type="button"
