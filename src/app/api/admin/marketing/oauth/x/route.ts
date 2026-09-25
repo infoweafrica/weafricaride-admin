@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set(
     "scope",
-    "tweet.read tweet.write users.read offline.access"
+    "tweet.read tweet.write users.read media.write offline.access"
   );
   authorizationUrl.searchParams.set("state", state);
   authorizationUrl.searchParams.set("code_challenge", challenge);
